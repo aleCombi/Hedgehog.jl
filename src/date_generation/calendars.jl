@@ -37,4 +37,4 @@ Determines if the given date `dt` is a weekend (Saturday or Sunday) in the `Week
 # Returns
 - `true` if the date falls on a weekend, otherwise `false`.
 """
-BusinessDays.isholiday(::WeekendsOnly, dt::Date) = dayofweek(dt) in [6, 7]  # Monday to Friday
+BusinessDays.isholiday(::WeekendsOnly, dt::Date) = dayofweek(dt) in [6, 7]

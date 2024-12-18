@@ -19,13 +19,13 @@ termination business day convention, holiday calendar, and the stub period.
 - `calendar::C`: The holiday calendar.
 - `stub_period::StubPeriod`: The configuration of the stub period.
 """
-struct ScheduleConfig{P <: Period, R <: RollConvention, B <: BusinessDayConvention, D <: BusinessDayConvention, C <: HolidayCalendar} <: AbstractScheduleConfig
-	period::P
-	roll_convention::R
-	business_days_convention::B
-	termination_bd_convention::D
-	calendar::C
-	stub_period::StubPeriod
+struct ScheduleConfig{P<:Period,R<:RollConvention,B<:BusinessDayConvention,D<:BusinessDayConvention,C<:HolidayCalendar} <: AbstractScheduleConfig
+    period::P
+    roll_convention::R
+    business_days_convention::B
+    termination_bd_convention::D
+    calendar::C
+    stub_period::StubPeriod
 end
 
 """
@@ -67,10 +67,10 @@ Generates a stream of unadjusted dates according to the given period and stub pe
 # Returns
 - A stream of unadjusted dates.
 """
-function generate_unadjusted_dates(start_date, end_date, ::StubPeriod{InArrearsStubPosition, ShortStubLength}, period::P) where {P <: Period}
-	dates = start_date:period:(end_date-Day(1)) |> collect
-	push!(dates, end_date)  # Add the end date eagerly
-	return dates
+function generate_unadjusted_dates(start_date, end_date, ::StubPeriod{InArrearsStubPosition,ShortStubLength}, period::P) where {P<:Period}
+    dates = start_date:period:(end_date-Day(1)) |> collect
+    push!(dates, end_date)
+    return dates
 end
 
 """
@@ -87,10 +87,10 @@ Generates a stream of unadjusted dates according to the given period and stub pe
 # Returns
 - A stream of unadjusted dates.
 """
-function generate_unadjusted_dates(start_date, end_date, ::StubPeriod{InArrearsStubPosition, LongStubLength}, period::P) where {P <: Period}
-	dates = start_date:period:(end_date-period-Day(1)) |> collect
-	push!(dates, end_date)  # Add the end date eagerly
-	return dates
+function generate_unadjusted_dates(start_date, end_date, ::StubPeriod{InArrearsStubPosition,LongStubLength}, period::P) where {P<:Period}
+    dates = start_date:period:(end_date-period-Day(1)) |> collect
+    push!(dates, end_date)
+    return dates
 end
 
 """
@@ -109,8 +109,8 @@ Generates a stream of unadjusted dates according to the given period and stub pe
 """
 function generate_unadjusted_dates(start_date, end_date, ::StubPeriod{UpfrontStubPosition,ShortStubLength}, period::P) where {P<:Period}
     dates = end_date:-period:(start_date+Day(1)) |> collect
-    push!(dates, start_date)  # Add the start date eagerly
-    return reverse(dates)  # Reverse the array to get the correct order
+    push!(dates, start_date)
+    return reverse(dates)
 end
 
 """
@@ -129,8 +129,8 @@ Generates a stream of unadjusted dates according to the given period and stub pe
 """
 function generate_unadjusted_dates(start_date, end_date, ::StubPeriod{UpfrontStubPosition,LongStubLength}, period::P) where {P<:Period}
     dates = end_date:-period:(start_date+period+Day(1)) |> collect
-    push!(dates, start_date)  # Add the start date eagerly
-    return reverse(dates)  # Reverse the array to get the correct order
+    push!(dates, start_date) 
+    return reverse(dates) 
 end
 
 """
@@ -147,7 +147,7 @@ Generates a stream of unadjusted dates according to the given schedule configura
 - A stream of unadjusted dates.
 """
 function generate_unadjusted_dates(start_date, end_date, schedule_config::ScheduleConfig)
-	return generate_unadjusted_dates(start_date, end_date, schedule_config.stub_period, schedule_config.period)
+    return generate_unadjusted_dates(start_date, end_date, schedule_config.stub_period, schedule_config.period)
 end
 
 """
@@ -162,7 +162,7 @@ Returns a function that adjusts a date according to the given schedule configura
 - A function that adjusts a date according to the given schedule configuration.
 """
 function date_corrector(schedule_config::ScheduleConfig)
-	return date -> adjust_date(roll_date(date, schedule_config.roll_convention), schedule_config.calendar, schedule_config.business_days_convention)
+    return date -> adjust_date(roll_date(date, schedule_config.roll_convention), schedule_config.calendar, schedule_config.business_days_convention)
 end
 
 """
@@ -177,7 +177,7 @@ Returns a function that adjusts a date according to the given schedule configura
 - A function that adjusts the termination date according to the given schedule configuration.
 """
 function termination_date_corrector(schedule_config::ScheduleConfig)
-	return date -> adjust_date(roll_date(date, schedule_config.roll_convention), schedule_config.calendar, schedule_config.termination_bd_convention)
+    return date -> adjust_date(roll_date(date, schedule_config.roll_convention), schedule_config.calendar, schedule_config.termination_bd_convention)
 end
 
 """
@@ -192,12 +192,12 @@ Generates a schedule of adjusted dates according to the given schedule configura
 # Returns
 - A schedule of adjusted dates.
 """
-function generate_schedule(unadjusted_dates, schedule_config::S) where S <: AbstractScheduleConfig
-	corrector = date_corrector(schedule_config)
-	adjusted_dates = map(corrector, unadjusted_dates[1:end-1])
-	adjusted_termination_date = termination_date_corrector(schedule_config)(unadjusted_dates[end])
-	push!(adjusted_dates, adjusted_termination_date)
-	return adjusted_dates
+function generate_schedule(unadjusted_dates, schedule_config::S) where {S<:AbstractScheduleConfig}
+    corrector = date_corrector(schedule_config)
+    adjusted_dates = map(corrector, unadjusted_dates[1:end-1])
+    adjusted_termination_date = termination_date_corrector(schedule_config)(unadjusted_dates[end])
+    push!(adjusted_dates, adjusted_termination_date)
+    return adjusted_dates
 end
 
 """
@@ -213,8 +213,8 @@ Generates a schedule of adjusted dates according to the given schedule configura
 # Returns
 - A schedule of adjusted dates.
 """
-function generate_schedule(start_date, end_date, schedule_config::S) where S <: AbstractScheduleConfig
-	return generate_schedule(generate_unadjusted_dates(start_date, end_date, schedule_config), schedule_config)
+function generate_schedule(start_date, end_date, schedule_config::S) where {S<:AbstractScheduleConfig}
+    return generate_schedule(generate_unadjusted_dates(start_date, end_date, schedule_config), schedule_config)
 end
 
 """
@@ -229,17 +229,17 @@ Generate the end date of a rate period given the schedule configuration and the 
 # Returns
 - Shifted, adjusted, and rolled date.
 """
-function generate_end_date(start_date, period::P, calendar::C, business_day_convention::B) where {P <: Period, B <: BusinessDayConvention, C<:HolidayCalendar}
-	adjustor = t -> adjust_date(t, calendar, business_day_convention)
-	return adjustor.(start_date .+ period)
+function generate_end_date(start_date, period::P, calendar::C, business_day_convention::B) where {P<:Period,B<:BusinessDayConvention,C<:HolidayCalendar}
+    adjustor = t -> adjust_date(t, calendar, business_day_convention)
+    return adjustor.(start_date .+ period)
 end
 
-reverse_business_adjustment(::ModifiedFollowing) = ModifiedPreceding()
-reverse_business_adjustment(::ModifiedPreceding) = ModifiedFollowing()
-reverse_business_adjustment(::FollowingBusinessDay) = PrecedingBusinessDay()
-reverse_business_adjustment(::PrecedingBusinessDay) = FollowingBusinessDay()
+# reverse_business_adjustment(::ModifiedFollowing) = ModifiedPreceding()
+# reverse_business_adjustment(::ModifiedPreceding) = ModifiedFollowing()
+# reverse_business_adjustment(::FollowingBusinessDay) = PrecedingBusinessDay()
+# reverse_business_adjustment(::PrecedingBusinessDay) = FollowingBusinessDay()
 
-function generate_start_date(end_date, period::P, calendar::C, business_day_convention::B) where {P <: Period, B <: BusinessDayConvention, C<:HolidayCalendar}
-	adjustor = t -> adjust_date(t, calendar, business_day_convention)
-	return adjustor.(end_date .- period)
+function generate_start_date(end_date, period::P, calendar::C, business_day_convention::B) where {P<:Period,B<:BusinessDayConvention,C<:HolidayCalendar}
+    adjustor = t -> adjust_date(t, calendar, business_day_convention)
+    return adjustor.(end_date .- period)
 end
