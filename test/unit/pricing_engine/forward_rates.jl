@@ -231,11 +231,12 @@ end
     fixings = RateFixingTuples(Base.ImmutableDict(Date(2000,1,1) => 0.05))
     # create rate curve
     rate_curve = FlatRateCurve("FlatCurve", start_date, 0.05, ACT365(), Exponential())
-    rate_market_data = RateMarketData(RateIndex("dummyRate"), rate_curve, fixings)
+    rate_index = RateIndex("RateIndex")
+    rate_market_data = RateMarketData(rate_index, rate_curve, fixings)
     # instrument rate definition
     margin = MarginOnUnderlying(AdditiveMargin(0.02))
-    rate_config = CompoundRateConfig(ACT360(), LinearRate(), ScheduleConfig(Month(1)); margin=margin)
-    instrument_rate = CompoundInstrumentRate(RateIndex("RateIndex", Hedgehog.ForwardLooking(), Month(1), NoHolidays(), NoneBusinessDayConvention()), rate_config)
+    rate_config = CompoundRateConfig(ACT360(), LinearRate(), ScheduleConfig(Month(1)); fixing_shift=NoShift(false), margin=margin)
+    instrument_rate = CompoundInstrumentRate(rate_index, rate_config)
 
     # instrument schedule definition
     schedule_config = ScheduleConfig(Month(2))
@@ -311,4 +312,33 @@ end
     total_accrual = 1 + calculated_forward * total_day_count
     
     @test log(total_accrual) / total_day_count ≈ 0.07 atol = 1E-5
+end
+
+@testitem "Past Cash Rate Conversion" begin
+    using Dates
+    using BusinessDays
+
+    # market data objects
+    present_date = Date(2000,1,1)
+    tenor = Month(3)
+    calendar = WeekendsOnly()
+    business_day_convention = NoneBusinessDayConvention()
+    rate_index = RateIndex("MyRate", Hedgehog.ForwardLooking(), tenor, calendar, business_day_convention, LinearRate(), ACT365())
+    rate_curve = FlatRateCurve("FlatCurve", present_date, 0.05, ACT365(), Exponential())
+    fixings = RateFixingTuples(Base.ImmutableDict(Date(2000,1,1) => 0.05))
+    rate_market_data = RateMarketData(rate_index, rate_curve, fixings)
+
+    # trade specifics
+    principal = 1E6
+    rate_config = SimpleRateConfig(ACT365(), LinearRate(), NoShift(false), AdditiveMargin(0))
+    rate = SimpleInstrumentRate(rate_index, rate_config)
+    start_date = Date(2000,1,1)
+    end_date = Date(2000,4,1)
+    schedule_config = ScheduleConfig(tenor)
+    schedule = InstrumentSchedule(start_date, end_date, schedule_config, NoShift(false))
+    float_stream_config = FloatStreamConfig(principal, rate, schedule)
+    schedules = SimpleRateSchedule(float_stream_config)
+    forward_rate_values = forward_rate(schedules, rate_market_data, rate_config)
+    
+    @test forward_rate_values[1] == 0.05
 end
