@@ -234,11 +234,18 @@ function generate_end_date(start_date, period::P, calendar::C, business_day_conv
     return adjustor.(start_date .+ period)
 end
 
-# reverse_business_adjustment(::ModifiedFollowing) = ModifiedPreceding()
-# reverse_business_adjustment(::ModifiedPreceding) = ModifiedFollowing()
-# reverse_business_adjustment(::FollowingBusinessDay) = PrecedingBusinessDay()
-# reverse_business_adjustment(::PrecedingBusinessDay) = FollowingBusinessDay()
+"""
+	generate_start_date(start_date::D, schedule_config::S) where {D<:TimeType, S<:AbstractScheduleConfig}
 
+Generate the start date of a rate period given the schedule configuration and the end date.
+
+# Arguments
+- `end_date`: The end date of the schedule.
+- `schedule_config::S`: The schedule configuration.
+
+# Returns
+- Shifted, adjusted, and rolled date.
+"""
 function generate_start_date(end_date, period::P, calendar::C, business_day_convention::B) where {P<:Period,B<:BusinessDayConvention,C<:HolidayCalendar}
     adjustor = t -> adjust_date(t, calendar, business_day_convention)
     return adjustor.(end_date .- period)
