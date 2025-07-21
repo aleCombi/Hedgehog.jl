@@ -56,25 +56,25 @@ using Printf
             "BlackScholesExact without antithetic",
             BlackScholesExact(),
             LognormalDynamics(),
-            SimulationConfig(trajectories, seeds = nothing, variance_reduction=Hedgehog.NoVarianceReduction())
+            SimulationConfig(trajectories, seeds = nothing)
         ),
         (
             "BlackScholesExact with antithetic",
             BlackScholesExact(),
             LognormalDynamics(),
-            SimulationConfig(trajectories, seeds = nothing)
+            SimulationConfig(trajectories, seeds = nothing; variance_reduction=Hedgehog.Antithetic())
         ),
         (
             "EulerMaruyama without antithetic",
             EulerMaruyama(),
             LognormalDynamics(),
-            SimulationConfig(trajectories, seeds = nothing, variance_reduction=Hedgehog.NoVarianceReduction())
+            SimulationConfig(trajectories, seeds = nothing)
         ),
         (
             "EulerMaruyama with antithetic",
             EulerMaruyama(),
             LognormalDynamics(),
-            SimulationConfig(trajectories, seeds = nothing)
+            SimulationConfig(trajectories, seeds = nothing; variance_reduction=Hedgehog.Antithetic())
         ),
     ]
 

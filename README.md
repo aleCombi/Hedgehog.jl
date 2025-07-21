@@ -4,6 +4,7 @@
 
 [![Build Status](https://github.com/aleCombi/Hedgehog.jl/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/aleCombi/Hedgehog.jl/actions/workflows/CI.yml?query=branch%3Amaster)
 [![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://alecombi.github.io/Hedgehog.jl/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ## 📐 Design Overview
 

@@ -1,51 +1,108 @@
-using Revise, Hedgehog, BenchmarkTools, Dates
+using Test
+using Hedgehog
+using Dates
+using Random
 
-"""Example code with benchmarks"""
+@testset "Heston Exact Simulation vs Euler Maruyama" begin
+    # Define the vanilla option payoff
+    strike = 100.0
+    expiry_date = Date(2025, 12, 31)
+    payoff = VanillaOption(strike, expiry_date, European(), Call(), Spot())
 
-# Define market inputs
-reference_date = Date(2020, 1, 1)
+    # Define the Heston model market inputs using positional arguments
+    reference_date = Date(2025, 1, 1)
+    spot = 100.0
+    rate = 0.05
+    heston_inputs = HestonInputs(
+        reference_date,
+        rate,
+        spot,
+        1.5,    # kappa
+        0.04,   # theta
+        0.3,    # sigma
+        -0.6,   # rho
+        0.04    # v0
+    )
 
-# Define Heston model parameters
-S0 = 100    # Initial stock price
-V0 = 0.010201    # Initial variance
-κ = 6.21      # Mean reversion speed
-θ = 0.019      # Long-run variance
-σ = 0.61   # Volatility of variance
-ρ = -0.7     # Correlation
-r = 0.0319      # Risk-free rate
-T = 1.0       # Time to maturity
-market_inputs = Hedgehog.HestonInputs(reference_date, r, S0, V0, κ, θ, σ, ρ)
-bs_market_inputs = BlackScholesInputs(reference_date, r, S0, sqrt(V0))
-# Define payoff
-expiry = reference_date + Day(365)
-strike = 100
-payoff =
-    VanillaOption(strike, expiry, Hedgehog.European(), Hedgehog.Call(), Hedgehog.Spot())
+    # Create the pricing problem
+    problem = PricingProblem(payoff, heston_inputs)
 
-# Define carr madan method
-boundary = 32
-α = 1
-method_heston = Hedgehog.CarrMadan(α, boundary, HestonDynamics())
+    # Generate a vector of seeds for reproducibility
+    num_paths = 10_000
+    rng = MersenneTwister(42)
+    seeds = rand(rng, UInt, 10*num_paths)
 
-# Define pricer
-pricing_problem = PricingProblem(payoff, market_inputs)
-analytic_sol = Hedgehog.solve(pricing_problem, method_heston)
+    # Pricing with Broadie-Kaya (Heston Exact) using Antithetic variance reduction
+    mc_exact_method = MonteCarlo(
+        HestonDynamics(),
+        HestonBroadieKaya(),
+        SimulationConfig(num_paths; seeds=seeds)
+    )
+    solution_exact = solve(problem, mc_exact_method)
+    price_exact = solution_exact.price
 
-dynamics = HestonDynamics()
-trajectories = 10000
-config = Hedgehog.SimulationConfig(trajectories; steps=100, variance_reduction=Hedgehog.NoVarianceReduction())
-config_exact = Hedgehog.SimulationConfig(trajectories; steps=1, variance_reduction=Hedgehog.NoVarianceReduction())
+    # Pricing with Euler-Maruyama using Antithetic variance reduction
+    mc_euler_method = MonteCarlo(
+        HestonDynamics(),
+        EulerMaruyama(),
+        SimulationConfig(num_paths; steps=200, seeds=seeds, variance_reduction=Hedgehog.Antithetic())
+    )
+    solution_euler = solve(problem, mc_euler_method)
+    price_euler = solution_euler.price
 
-montecarlo_method = MonteCarlo(dynamics, EulerMaruyama(), config)
-montecarlo_method_exact = MonteCarlo(dynamics, HestonBroadieKaya(), config_exact)
+        # Pricing with Carr-Madan
+    carr_madan_method = CarrMadan(1.0, 32.0, HestonDynamics())
+    solution_carr_madan = solve(problem, carr_madan_method)
+    price_carr_madan = solution_carr_madan.price
 
-solution = Hedgehog.solve(pricing_problem, montecarlo_method)
-solution_exact = Hedgehog.solve(pricing_problem, montecarlo_method_exact)
+    # Compare the prices with a lower tolerance
+    @test isapprox(price_exact, price_euler, rtol=5e-2)
+    @test isapprox(price_exact, price_carr_madan, rtol=2e-2)
+end
 
-@show solution.price
-@show analytic_sol.price
-@show solution_exact.price
+@testset "Heston Exact Simulation vs Carr-Madan" begin
+    # Define the vanilla option payoff
+    strike = 100.0
+    expiry_date = Date(2025, 12, 31)
+    payoff = VanillaOption(strike, expiry_date, European(), Call(), Spot())
 
-@btime Hedgehog.solve($pricing_problem, $montecarlo_method_exact).price
-@btime Hedgehog.solve($pricing_problem, $montecarlo_method).price
+    # Define the Heston model market inputs using positional arguments
+    reference_date = Date(2025, 1, 1)
+    spot = 100.0
+    rate = 0.05
+    heston_inputs = HestonInputs(
+        reference_date,
+        rate,
+        spot,
+        1.5,    # kappa
+        0.04,   # theta
+        0.3,    # sigma
+        -0.6,   # rho
+        0.04    # v0
+    )
 
+    # Create the pricing problem
+    problem = PricingProblem(payoff, heston_inputs)
+
+    # Generate a vector of seeds for reproducibility
+    num_paths = 10_000
+    rng = MersenneTwister(42)
+    seeds = rand(rng, UInt, num_paths)
+
+    # Pricing with Broadie-Kaya (Heston Exact) using Antithetic variance reduction
+    mc_exact_method = MonteCarlo(
+        HestonDynamics(),
+        HestonBroadieKaya(),
+        SimulationConfig(num_paths; seeds=seeds)
+    )
+    solution_exact = solve(problem, mc_exact_method)
+    price_exact = solution_exact.price
+
+    # Pricing with Carr-Madan
+    carr_madan_method = CarrMadan(1.0, 32.0, HestonDynamics())
+    solution_carr_madan = solve(problem, carr_madan_method)
+    price_carr_madan = solution_carr_madan.price
+
+    # Compare the prices with a lower tolerance
+    @test isapprox(price_exact, price_carr_madan, rtol=2e-2)
+end

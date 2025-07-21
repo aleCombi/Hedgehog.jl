@@ -82,7 +82,8 @@ export MonteCarlo,
     BlackScholesExact,
     LognormalDynamics,
     HestonDynamics,
-    SimulationConfig
+    SimulationConfig,
+    Antithetic
 export LSM
 
 # Sensitivities

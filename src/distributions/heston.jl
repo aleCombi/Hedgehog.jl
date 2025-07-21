@@ -1,18 +1,20 @@
 """
-    HestonProblem(μ, κ, Θ, σ, ρ, u0, tspan; seed=UInt64(0), kwargs...)
+    LogHestonProblem(μ, κ, Θ, σ, ρ, u0, tspan; seed=UInt64(0), kwargs...)
 
 Constructs an `SDEProblem` representing the Heston model dynamics using Euler-Maruyama.
 Returns a `SDEProblem` with correlated Brownian motion and user-specified initial values.
 """
-function HestonProblem(μ, κ, Θ, σ, ρ, u0, tspan; seed = UInt64(0), kwargs...)
+function LogHestonProblem(μ, κ, Θ, σ, ρ, u0, tspan; seed = UInt64(0), kwargs...)
     f = function (u, p, t)
         adj_var = max(u[2], 0)
-        return @. [μ * u[1], κ * (Θ - adj_var)]
+        return [μ - 0.5 * adj_var, κ * (Θ - adj_var)]
     end
+
     g = function (u, p, t)
         adj_var = sqrt(max(u[2], 0))
-        return @. [adj_var * u[1], σ * adj_var]
+        return [adj_var, σ * adj_var]
     end
+
     Γ = [1 ρ; ρ 1]
 
     noise = CorrelatedWienerProcess(Γ, tspan[1], zeros(2))
@@ -80,7 +82,7 @@ Returns a `NoiseProcess` sampling from the Heston distribution at each timestep.
 function HestonNoise(μ, κ, θ, σ, ρ, t0, W0, Z0 = nothing; kwargs...)
     @inline function Heston_dist(DW, W, dt, u, p, t, rng) #dist
         S, V = exp(W[end][1]), W[end][2]
-        heston_dist_at_t = HestonDistribution(S, V, κ, θ, σ, ρ, μ, dt)
+        heston_dist_at_t = LogHestonDistribution(S, V, κ, θ, σ, ρ, μ, dt)
         S1, V1 = @fastmath rand(rng, heston_dist_at_t; kwargs...)  # Calls exact Heston sampler
         return [S1 - W[end][1], V1 - W[end][2]]
     end
@@ -89,7 +91,7 @@ function HestonNoise(μ, κ, θ, σ, ρ, t0, W0, Z0 = nothing; kwargs...)
 end
 
 """
-    HestonDistribution <: ContinuousMultivariateDistribution
+    LogHestonDistribution <: ContinuousMultivariateDistribution
 
 Container type for Heston model parameters, used for exact sampling.
 Fields:
@@ -97,7 +99,7 @@ Fields:
 - `κ`, `θ`, `σ`, `ρ`: mean reversion, long-term variance, vol-of-vol, and correlation
 - `r`, `T`: risk-free rate and maturity
 """
-struct HestonDistribution{TS0,TV0,Tκ,Tθ,Tσ,Tρ,Tr,T} <: ContinuousMultivariateDistribution
+struct LogHestonDistribution{TS0,TV0,Tκ,Tθ,Tσ,Tρ,Tr,T} <: ContinuousMultivariateDistribution
     S0::TS0
     V0::TV0
     κ::Tκ
@@ -108,12 +110,19 @@ struct HestonDistribution{TS0,TV0,Tκ,Tθ,Tσ,Tρ,Tr,T} <: ContinuousMultivariat
     T::T
 end
 
+
+import Distributions: length
+
+function Base.length(::LogHestonDistribution)
+    return 2 # The Heston model is a 2-dimensional process (Asset Price, Variance)
+end
+
 """
-    sample_V_T(rng, d::HestonDistribution)
+    sample_V_T(rng, d::LogHestonDistribution)
 
 Samples the terminal variance `V_T` from the noncentral chi-squared distribution implied by the Heston model.
 """
-function sample_V_T(rng::AbstractRNG, d::HestonDistribution)
+function sample_V_T(rng::AbstractRNG, d::LogHestonDistribution)
     κ, θ, σ, V0, T = d.κ, d.θ, d.σ, d.V0, d.T
 
     d = 4 * κ * θ / σ^2  # Degrees of freedom
@@ -124,11 +133,11 @@ function sample_V_T(rng::AbstractRNG, d::HestonDistribution)
 end
 
 """
-    sample_integral_V(VT, rng, dist::HestonDistribution; kwargs...)
+    sample_integral_V(VT, rng, dist::LogHestonDistribution; kwargs...)
 
 Samples the integral ∫₀ᵗ V_s ds conditional on initial and terminal variance using the characteristic function method.
 """
-function sample_integral_V(VT, rng, dist::HestonDistribution; kwargs...)
+function sample_integral_V(VT, rng, dist::LogHestonDistribution; kwargs...)
     ϕ = HestonCFIterator(VT, dist)
     return sample_from_cf(rng, ϕ; kwargs...)
 end
@@ -138,7 +147,7 @@ end
 
 Precomputes constants for efficient evaluation of the characteristic function of ∫₀ᵗ V_s ds.
 """
-struct HestonCFIterator{TVT, TDist<:HestonDistribution, TLogIκ, Tζκ, Tηκ, Tν}
+struct HestonCFIterator{TVT, TDist<:LogHestonDistribution, TLogIκ, Tζκ, Tηκ, Tν}
     VT::TVT
     dist::TDist
     logIκ::TLogIκ
@@ -149,11 +158,11 @@ end
 
 
 """
-    HestonCFIterator(VT, dist::HestonDistribution)
+    HestonCFIterator(VT, dist::LogHestonDistribution)
 
 Constructs a `HestonCFIterator` used for evaluating the characteristic function of the integral of variance.
 """
-function HestonCFIterator(VT, dist::HestonDistribution)
+function HestonCFIterator(VT, dist::LogHestonDistribution)
     κ, θ, σ, V0, T = dist.κ, dist.θ, dist.σ, dist.V0, dist.T
     d = 4 * κ * θ / σ^2
     ν = 0.5 * d - 1
@@ -229,13 +238,13 @@ function log_besseli_corrected(ν, z::Complex, θ_ref::Ref{Float64})
 end
 
 """
-    rand(rng, d::HestonDistribution; kwargs...)
+    rand(rng, d::LogHestonDistribution; kwargs...)
 
 Alternative sampling version returning `[log(S_T), V_T]` instead of `S_T`.
 Useful for testing and diagnostics.
 """
-function rand(rng::AbstractRNG, d::HestonDistribution; antithetic = false, kwargs...)
-    d1 = HestonDistribution(d.S0, d.V0, d.κ, d.θ, d.σ, d.ρ, d.r, d.T)
+function rand(rng::AbstractRNG, d::LogHestonDistribution; antithetic = false, kwargs...)
+    d1 = LogHestonDistribution(d.S0, d.V0, d.κ, d.θ, d.σ, d.ρ, d.r, d.T)
 
     # Step 1: Sample V_T
     V_T = sample_V_T(rng, d1)
@@ -249,11 +258,28 @@ function rand(rng::AbstractRNG, d::HestonDistribution; antithetic = false, kwarg
     return [log_S_T, V_T]
 end
 
+function Distributions.rand!(
+    rng::AbstractRNG,
+    d::LogHestonDistribution,
+    x::AbstractVector{<:Real};
+    antithetic = false,
+    kwargs...
+)
+    # Call your allocating rand function
+    sample = rand(rng, d; antithetic=antithetic, kwargs...)
+    
+    # Copy the result into the pre-allocated vector x
+    x[1] = sample[1]
+    x[2] = sample[2]
+    
+    return x
+end
+
 function sample_log_S_T(
     V_T,
     integral_V,
     rng::AbstractRNG,
-    d::HestonDistribution;
+    d::LogHestonDistribution;
     antithetic = false,
 )
     κ, θ, σ, ρ, V0, T, S0, r = d.κ, d.θ, d.σ, d.ρ, d.V0, d.T, d.S0, d.r
@@ -274,11 +300,11 @@ function sample_log_S_T(
 end
 
 """
-    characteristic_function(d::HestonDistribution, u)
+    characteristic_function(d::LogHestonDistribution, u)
 
 Computes the characteristic function of `log(S_T)` under the Heston model at complex value `u`.
 """
-function cf(d::HestonDistribution, u)
+function cf(d::LogHestonDistribution, u)
     T, S0, V0, κ, θ, σ, ρ, r = d.T, d.S0, d.V0, d.κ, d.θ, d.σ, d.ρ, d.r
 
     d1 = sqrt((κ - ρ * σ * im * u)^2 + σ^2 * (im * u + u^2))
