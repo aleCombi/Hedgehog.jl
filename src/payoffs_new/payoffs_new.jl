@@ -48,14 +48,6 @@ const BermudanCall{U<:Underlying,R<:Real,T<:TimeType} =
 const AmericanCall{U<:Underlying,R<:Real,T<:TimeType} =
     Derivative{U,CallPayoff{R},AmericanExercise{T}}
 
-
-# --- Optional type aliases for common combos ---
-const EuropeanCall{U<:Underlying,R<:Real,Tt<:TimeType} = Derivative{U,CallPayoff{R},European{Tt}}
-const BermudanCall{U<:Underlying,R<:Real,Tt<:TimeType} = Derivative{U,CallPayoff{R},Bermudan{Tt}}
-const AmericanCall{U<:Underlying,R<:Real,Tt<:TimeType} = Derivative{U,CallPayoff{R},American{Tt}}
-
-using Dates
-
 # --- 1) Abstract path kind ---
 abstract type AbstractPath1D end
 
