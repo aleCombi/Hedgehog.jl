@@ -1,67 +1,78 @@
-using Dates
+# --- Abstract interfaces ------------------------------------------------------
+abstract type AbstractUnderlying end
+abstract type AbstractDerivative <: AbstractUnderlying end
+abstract type AbstractPayoff end
+abstract type AbstractActionSet end
 
-# --- Core nouns ---
-abstract type PayoffFunction end
-abstract type Control end
-abstract type Underlying end
+# Six traits (derivative-only)
+horizon(d::AbstractDerivative)    = error("horizon not implemented")
+notional(d::AbstractDerivative)   = error("notional not implemented")
+underlying(d::AbstractDerivative) = error("underlying not implemented")
+actions(d::AbstractDerivative)    = error("actions not implemented")
+payoff(d::AbstractDerivative)     = error("payoff not implemented")
+currencies(d::AbstractDerivative) = error("currencies not implemented")
 
-struct Derivative{U<:Underlying,P<:PayoffFunction,C<:Control}
-    underlying::U
-    payoff::P
-    control::C
+# --- Defaults ----------------------------------------------------------------
+struct NoActions <: AbstractActionSet end
+const NO_ACTIONS = NoActions()
+
+struct DummyUnderlying <: AbstractUnderlying end
+struct DummyCurrency   end
+const DUMMY_UNDERLYING = DummyUnderlying()
+const DUMMY_CURRENCY   = DummyCurrency()
+
+# --- Canonical contract -------------------------------------------------------
+struct GenericContract{TType,NType,UType<:AbstractUnderlying,
+                       PType<:AbstractPayoff,CType,
+                       AType<:AbstractActionSet} <: AbstractDerivative
+    horizon::TType
+    notional::NType
+    underlying::UType
+    payoff::PType
+    currencies::CType
+    actions::AType
 end
 
-# --- Underlying ---
-struct Equity <: Underlying
-    symbol::Symbol
+# Trait implementations
+horizon(d::GenericContract)    = d.horizon
+notional(d::GenericContract)   = d.notional
+underlying(d::GenericContract) = d.underlying
+payoff(d::GenericContract)     = d.payoff
+currencies(d::GenericContract) = d.currencies
+actions(d::GenericContract)    = d.actions
+
+# --- Payoff(s) ---------------------------------------------------------------
+struct CallPayoff{K} <: AbstractPayoff
+    strike::K
 end
 
-# --- Payoff ---
-struct CallPayoff{R<:Real} <: PayoffFunction
-    K::R
+# --- Explicit builders (with defaults) ---------------------------------------
+
+# Single-leg, one currency, no actions
+function SingleLegDerivative(horizon;
+                             notional::Real = 1.0,
+                             underlying::AbstractUnderlying = DUMMY_UNDERLYING,
+                             payoff::AbstractPayoff = CallPayoff(0.0),
+                             currency = DUMMY_CURRENCY)
+    GenericContract(horizon, notional, underlying, payoff, currency, NO_ACTIONS)
 end
 
-# --- Exercise controls (special cases of Control) ---
-"European: exercise only at maturity."
-struct EuropeanExercise{T<:TimeType} <: Control
-    maturity::T
+# Multi-leg, tuple notionals and tuple currencies, no actions
+function MultiLegDerivative(horizon;
+                            notionals::NTuple{K,<:Real} = (1.0, 1.0),
+                            underlying::AbstractUnderlying = DUMMY_UNDERLYING,
+                            payoff::AbstractPayoff = CallPayoff(0.0),
+                            currencies::NTuple{K,Any} = (DUMMY_CURRENCY, DUMMY_CURRENCY)) where {K}
+    GenericContract(horizon, notionals, underlying, payoff, currencies, NO_ACTIONS)
 end
 
-"Bermudan: exercise only on specified dates."
-struct BermudanExercise{T<:TimeType} <: Control
-    dates::Vector{T}
-end
-
-"American: exercise at any time in [start, maturity]."
-struct AmericanExercise{T<:TimeType} <: Control
-    start::T
-    maturity::T
-end
-
-# --- Type aliases for common combos ---
-const EuropeanCall{U<:Underlying,R<:Real,T<:TimeType} =
-    Derivative{U,CallPayoff{R},EuropeanExercise{T}}
-
-const BermudanCall{U<:Underlying,R<:Real,T<:TimeType} =
-    Derivative{U,CallPayoff{R},BermudanExercise{T}}
-
-const AmericanCall{U<:Underlying,R<:Real,T<:TimeType} =
-    Derivative{U,CallPayoff{R},AmericanExercise{T}}
-
-# --- 1) Abstract path kind ---
-abstract type AbstractPath1D end
-
-# --- 2) Canonical wrapper you can subtype later or use directly ---
-struct Path1D{R<:Real,T<:TimeType,V<:AbstractVector{R},W<:AbstractVector{T}} <: AbstractPath1D
-    values::V
-    times::W
-    function Path1D(values::V, times::W) where {R<:Real,T<:TimeType,V<:AbstractVector{R},W<:AbstractVector{T}}
-        @assert length(values) == length(times)
-        new{R,T,V,W}(values, times)
-    end
-end
-
-# --- 3) Fast interface impl for the canonical type ---
-@inline value_at(p::Path1D, i::Int) = @inbounds p.values[i]
-@inline  time_at(p::Path1D, i::Int) = @inbounds p.times[i]
-@inline   npoints(p::Path1D)        = length(p.values)
+# European Call builder (wraps SingleLegDerivative)
+EuropeanCall(horizon, strike;
+             notional::Real = 1.0,
+             underlying::AbstractUnderlying = DUMMY_UNDERLYING,
+             currency = DUMMY_CURRENCY) =
+    SingleLegDerivative(horizon;
+                        notional = notional,
+                        underlying = underlying,
+                        payoff = CallPayoff(strike),
+                        currency = currency)
