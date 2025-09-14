@@ -76,3 +76,6 @@ EuropeanCall(horizon, strike;
                         underlying = underlying,
                         payoff = CallPayoff(strike),
                         currency = currency)
+
+
+# next up: path representation, cashflows representation, cashflow function accepting actions and cashflows
