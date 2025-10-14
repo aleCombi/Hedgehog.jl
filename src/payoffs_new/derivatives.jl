@@ -125,9 +125,8 @@ end
 
 # Level 1: Dispatch on exercise style (European)
 function solve(
-    prob::PricingProblem{<:EuropeanContract{P}, M},
-    method::BlackScholesAnalytic
-) where {P<:AbstractPayoffNew, M<:BlackScholesInputs}
+    prob::PricingProblem{<:EuropeanContract},
+    method::BlackScholesAnalytic)
     return _solve_european_bs(prob.payoff.payoff, prob, method)
 end
 
