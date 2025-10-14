@@ -52,11 +52,14 @@ include("distributions/sample_from_cf.jl")
 include("calibration/basket.jl")
 include("calibration/calibration.jl")
 
+include("payoffs_new/derivatives.jl")
+
+export exercise_style, VanillaPayoff, EuropeanContract, NoAction, TerminalValue, evaluate
 # Utilities
 export yearfrac, add_yearfrac
 
 # Payoffs
-export VanillaOption, European, American, Spot, Forward, Call, Put, parity_transform
+export VanillaOption, EuropeanStyle, AmericanStyle, Spot, Forward, Call, Put, parity_transform
 
 # Market data
 export BlackScholesInputs, AbstractMarketInputs, HestonInputs
