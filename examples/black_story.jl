@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.6
+# v0.20.19
 
 using Markdown
 using InteractiveUtils
@@ -326,6 +326,17 @@ begin
 
 		return greek_at_spot       
 	end
+
+		function get_fd_greek_at_spot(problem, vol, greek_lens, fd_bump)
+		# Base market inputs with the slider value
+        modified_problem = set(problem, vol_lens, vol)
+		# Greek function that takes a spot value and returns the requested Greek
+        greek_at_spot(s) = 
+            solve(GreekProblem(set(modified_problem, spot_lens, s), greek_lens), 
+                  FiniteDifference(fd_bump), BlackScholesAnalytic()).greek
+
+		return greek_at_spot       
+	end
 end
 
 # ╔═╡ e485fff0-71a7-46fb-af1c-923ec0d99e36
@@ -365,6 +376,10 @@ Playing with the volatility slider you can see how with low volatilities the gra
 # ╔═╡ b007b80f-9da9-4f8b-ad32-5bce4dae0d97
 @bind vol_slider_price Slider(0.01:0.01:1.8, default=0.2)
 
+# ╔═╡ 677008f9-afb0-45c9-b29e-e1b5fba2341d
+
+
+
 # ╔═╡ 46b114ab-954a-4e64-b69c-9dc33607feb0
 begin
 	price_at_spot = get_price_at_spot(base_problem, vol_slider_price)
@@ -385,15 +400,24 @@ The delta is also an increasing function of the spot price.
 # ╔═╡ 7582c0e6-7c44-42d1-9db4-260bcff044c6
 @bind vol_slider_delta Slider(0.001:0.01:0.8, default=0.2)
 
+# ╔═╡ 6c58f48a-b9e0-405c-87b2-da7a02eab9b2
+@bind bump Slider(0.000000000001:0.00001:0.8, default=0.2)
+
+# ╔═╡ b669d785-f5d6-4f07-b836-f64eb2bf0775
+bump
+
 # ╔═╡ 178eaf5d-74c8-4e48-bb96-5f8c0c97058c
 begin
 	delta_at_spot = get_greek_at_spot(base_problem, vol_slider_delta, spot_lens)
 	call_deltas = delta_at_spot.(spots)
 	# Create a NEW plot object for Delta
-    p2 = plot(spots, call_deltas, label="Call Delta", lw=2)
+    p2 = plot(spots, delta_at_spot, label="Call Delta", lw=2)
     xlabel!(p2, "Spot Price") # Modify p2's labels
     ylabel!(p2, "Delta")
     title!(p2, "Option Delta vs Spot (Volatility = $(round(vol_slider_delta * 100))%)")
+	delta_at_spot_fd = get_fd_greek_at_spot(base_problem, vol_slider_delta, spot_lens, bump)
+    p21 = plot!(spots, delta_at_spot_fd, label="Call Delta", lw=2)
+
 end
 
 # ╔═╡ f02c1a0f-a30e-4f83-9fbe-8d93a2a80dc4
@@ -417,6 +441,9 @@ begin
     ylabel!(p3, "Vega")
     title!(p3, "Option Vega vs Spot (Volatility = $(round(vol_slider_vega * 100))%)")
 end
+
+# ╔═╡ 71f631b5-30e4-4bc8-aff3-c54aa6042f05
+
 
 # ╔═╡ Cell order:
 # ╠═486b8480-235a-11f0-1d74-590ef52f1790
@@ -443,10 +470,14 @@ end
 # ╠═7681bf7e-8b29-49b6-a452-c5ae66f943c9
 # ╟─fba78c77-5baf-47f7-a789-cd020bb91a53
 # ╠═b007b80f-9da9-4f8b-ad32-5bce4dae0d97
+# ╠═677008f9-afb0-45c9-b29e-e1b5fba2341d
 # ╠═46b114ab-954a-4e64-b69c-9dc33607feb0
 # ╠═68cae9fd-909f-4618-ac61-2151f11d182f
 # ╠═7582c0e6-7c44-42d1-9db4-260bcff044c6
+# ╠═6c58f48a-b9e0-405c-87b2-da7a02eab9b2
+# ╠═b669d785-f5d6-4f07-b836-f64eb2bf0775
 # ╠═178eaf5d-74c8-4e48-bb96-5f8c0c97058c
 # ╟─f02c1a0f-a30e-4f83-9fbe-8d93a2a80dc4
 # ╠═24aeee97-c9da-468a-8456-b3c94d61414f
 # ╠═6384de4a-5c6e-4693-9334-6f7810d8fc2d
+# ╠═71f631b5-30e4-4bc8-aff3-c54aa6042f05
