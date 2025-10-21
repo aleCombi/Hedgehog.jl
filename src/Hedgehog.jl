@@ -53,8 +53,10 @@ include("calibration/basket.jl")
 include("calibration/calibration.jl")
 
 include("payoffs_new/derivatives.jl")
+include("payoffs_new/new_american.jl")
 
-export exercise_style, VanillaPayoff, EuropeanContract, NoAction, TerminalValue, evaluate
+export exercise_style, VanillaPayoff, EuropeanContract, NoAction, TerminalValue, evaluate,
+AmericanVanillaOption, StoppingRule
 # Utilities
 export yearfrac, add_yearfrac
 

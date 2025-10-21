@@ -1,7 +1,9 @@
+# payoffs_new.jl - Complete implementation
+
 # --- Abstract interfaces ------------------------------------------------------
 abstract type AbstractUnderlying end
-abstract type AbstractPayoffNew end  # Renamed to avoid conflict
-abstract type AbstractDerivative <: AbstractPayoffNew end  # Derivative is a payoff
+abstract type AbstractPayoffNew end
+abstract type AbstractDerivative <: AbstractPayoffNew end
 abstract type AbstractActionSet end
 
 # --- Exercise styles (for dispatch/traits only) -------------------------------
@@ -43,8 +45,14 @@ end
 const EuropeanContract{P<:AbstractPayoffNew} = 
     GenericContract{<:Any,<:Any,<:Any,P,<:Any,NoAction}
 
+const AmericanContract{P<:AbstractPayoffNew} = 
+    GenericContract{<:Any,<:Any,<:Any,P,<:Any,StoppingRule}
+
 const EuropeanProblem{P<:AbstractPayoffNew, M<:AbstractMarketInputs} = 
     PricingProblem{EuropeanContract{P}, M}
+
+const AmericanProblem{P<:AbstractPayoffNew, M<:AbstractMarketInputs} = 
+    PricingProblem{AmericanContract{P}, M}
 
 # -------------------------------------------------------- 
 # Payoffs design
@@ -119,18 +127,34 @@ function VanillaOption(
                          underlying=underlying, notional=notional, currency=currency)
 end
 
+"""
+    AmericanVanillaOption(strike, expiry, call_put; kwargs...)
+
+Constructs an American-style vanilla option.
+"""
+function AmericanVanillaOption(
+    strike,
+    expiry,
+    call_put;
+    underlying = GenericUnderlying(),
+    notional = 1.0,
+    currency = Currency(:USD)
+)
+    return VanillaOption(strike, expiry, call_put, AmericanStyle(); 
+                         underlying=underlying, notional=notional, currency=currency)
+end
+
 # -------------------------------------------------------- 
-# Pricing - Clean Dispatch
+# Pricing - European with Black-Scholes
 # -------------------------------------------------------- 
 
-# Level 1: Dispatch on exercise style (European)
 function solve(
     prob::PricingProblem{<:EuropeanContract},
-    method::BlackScholesAnalytic)
+    method::BlackScholesAnalytic
+)
     return _solve_european_bs(prob.payoff.payoff, prob, method)
 end
 
-# Level 2: Dispatch on payoff type (VanillaPayoff)
 function _solve_european_bs(
     payoff::VanillaPayoff,
     prob::PricingProblem,
@@ -157,4 +181,107 @@ function _solve_european_bs(
     end
 
     return AnalyticSolution(prob, method, price * contract.notional)
+end
+
+# -------------------------------------------------------- 
+# Pricing - European with CRR (for comparison)
+# -------------------------------------------------------- 
+
+function solve(
+    prob::PricingProblem{<:EuropeanContract},
+    method::CoxRossRubinsteinMethod
+)
+    return _solve_european_crr(prob.payoff.payoff, prob, method)
+end
+
+function _solve_european_crr(
+    payoff::VanillaPayoff,
+    prob::PricingProblem,
+    method::CoxRossRubinsteinMethod
+)
+    contract = prob.payoff
+    market = prob.market_inputs
+    
+    K = payoff.strike
+    σ = get_vol(market.sigma, contract.horizon, K)
+    
+    steps = method.steps
+    T = yearfrac(market.referenceDate, contract.horizon)
+    forward = market.spot / df(market.rate, contract.horizon)
+    ΔT = T / steps
+    u = exp(σ * sqrt(ΔT))
+    
+    forward_at_i(i) = forward * u .^ (-i:2:i)
+    
+    # European: only need terminal value
+    p = 1 / (1 + u)
+    
+    terminal_values = forward_at_i(steps)
+    value = [evaluate(payoff, TerminalValue(S)) for S in terminal_values]
+    
+    # Backward induction (no early exercise)
+    for step in reverse(0:(steps - 1))
+        continuation = p * value[2:end] + (1 - p) * value[1:end-1]
+        discount_factor = exp(-zero_rate(market.rate, contract.horizon) * ΔT)
+        value = discount_factor * continuation
+    end
+    
+    return CRRSolution(prob, method, value[1] * contract.notional)
+end
+
+# -------------------------------------------------------- 
+# Pricing - American with CRR
+# -------------------------------------------------------- 
+
+function solve(
+    prob::PricingProblem{<:AmericanContract},
+    method::CoxRossRubinsteinMethod
+)
+    return _solve_american_crr(prob.payoff.payoff, prob, method)
+end
+
+function _solve_american_crr(
+    payoff::VanillaPayoff,
+    prob::PricingProblem,
+    method::CoxRossRubinsteinMethod
+)
+    contract = prob.payoff
+    market = prob.market_inputs
+    
+    K = payoff.strike
+    σ = get_vol(market.sigma, contract.horizon, K)
+    
+    steps = method.steps
+    T = yearfrac(market.referenceDate, contract.horizon)
+    forward = market.spot / df(market.rate, contract.horizon)
+    ΔT = T / steps
+    u = exp(σ * sqrt(ΔT))
+    
+    forward_at_i(i) = forward * u .^ (-i:2:i)
+    
+    # American on spot: need to discount spot from forward
+    underlying_at_i(i) = exp(
+        -zero_rate(market.rate, add_yearfrac(market.referenceDate, i * ΔT)) *
+        (steps - i) * ΔT
+    ) * forward_at_i(i)
+    
+    p = 1 / (1 + u)
+    
+    # Terminal payoff
+    terminal_values = forward_at_i(steps)
+    value = [evaluate(payoff, TerminalValue(S)) for S in terminal_values]
+    
+    # Backward induction with early exercise
+    for step in reverse(0:(steps - 1))
+        continuation = p * value[2:end] + (1 - p) * value[1:end-1]
+        discount_factor = exp(-zero_rate(market.rate, contract.horizon) * ΔT)
+        discounted = discount_factor * continuation
+        
+        # American: compare with intrinsic value
+        S_at_step = underlying_at_i(step)
+        intrinsic = [evaluate(payoff, TerminalValue(S)) for S in S_at_step]
+        value = max.(discounted, intrinsic)
+    end
+    
+    return CRRSolution(prob, method, value[1] * contract.notional)
 end
