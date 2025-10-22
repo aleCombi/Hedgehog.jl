@@ -91,4 +91,12 @@ export ForwardAD, FiniteDifference, GreekProblem, SecondOrderGreekProblem, Analy
 # Calibration
 export RootFinderAlgo, OptimizerAlgo, CalibrationProblem, BasketPricingProblem
 
+# Add to src/Hedgehog.jl after other includes
+include("market_inputs/market_vols.jl")
+
+# Add to exports
+export MarketVolSurface, VolQuote
+export filter_quotes, get_expiries, get_strikes, get_quote
+export calibrate_heston
+
 end

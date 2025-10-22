@@ -10,6 +10,8 @@ should be calibrated using Accessors.jl access paths.
 - `accessors::Vector{Accessor}`: List of `Accessors.jl` lenses specifying which parameters to calibrate.
 - `quotes::Vector{Q}`: Observed market prices to match.
 - `initial_guess::Vector{I}`: Initial guesses for each calibrated parameter.
+- `lb::Union{Vector{I}, Nothing}`: Lower bounds for parameters (optional).
+- `ub::Union{Vector{I}, Nothing}`: Upper bounds for parameters (optional).
 """
 struct CalibrationProblem{
     P<:AbstractPayoff,
@@ -24,6 +26,33 @@ struct CalibrationProblem{
     accessors::Vector{Accessor}
     quotes::Vector{Q}
     initial_guess::Vector{I}
+    lb::Union{Vector{I}, Nothing}
+    ub::Union{Vector{I}, Nothing}
+end
+
+"""
+    CalibrationProblem(pricing_problem, pricing_method, accessors, quotes, initial_guess; lb=nothing, ub=nothing)
+
+Constructor with optional bounds.
+"""
+function CalibrationProblem(
+    pricing_problem::BasketPricingProblem{P, M},
+    pricing_method::A,
+    accessors::Vector{Accessor},
+    quotes::Vector{Q},
+    initial_guess::Vector{I};
+    lb::Union{Vector{I}, Nothing}=nothing,
+    ub::Union{Vector{I}, Nothing}=nothing
+) where {P<:AbstractPayoff, M<:AbstractMarketInputs, A<:AbstractPricingMethod, Accessor, I<:Real, Q<:Real}
+    return CalibrationProblem{P, M, A, Accessor, I, Q}(
+        pricing_problem,
+        pricing_method,
+        accessors,
+        quotes,
+        initial_guess,
+        lb,
+        ub
+    )
 end
 
 """
@@ -79,7 +108,16 @@ function solve(calib::CalibrationProblem, calib_algo::OptimizerAlgo; kwargs...)
     end
 
     optf = OptimizationFunction(objective, calib_algo.diff)
-    opt_prob = OptimizationProblem(optf, calib.initial_guess, nothing)
+    
+    # Create OptimizationProblem with bounds
+    opt_prob = OptimizationProblem(
+        optf, 
+        calib.initial_guess, 
+        nothing;
+        lb=calib.lb,
+        ub=calib.ub
+    )
+    
     result = Optimization.solve(opt_prob, calib_algo.optim_algo; kwargs...)
     return result
 end
@@ -97,7 +135,7 @@ end
 """
     RootFinderAlgo()
 
-Constructs a `RootFinderAlgo` using the default method (Brent’s method inside `NonlinearSolve`).
+Constructs a `RootFinderAlgo` using the default method (Brent's method inside `NonlinearSolve`).
 """
 function RootFinderAlgo()
     return RootFinderAlgo(Brent())
