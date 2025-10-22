@@ -2,43 +2,58 @@
 
 # Data paths
 data:
-  parquet_file: "data/deribit_btc_2025-10-21.parquet"
-
-# Market data filtering
-filtering:
-  min_days: 21              # Minimum days to expiry
-  max_years: 1.5            # Maximum years to expiry
-  min_moneyness: 0.75       # Minimum strike/spot ratio
-  max_moneyness: 1.25       # Maximum strike/spot ratio
-
-# Market parameters
-market:
-  risk_free_rate: 0.03      # 3% annualized
-
-# Heston calibration
+  base_path: "C:/repos/DeribitVols/data/downloaded/all_20251022-192655"
+  underlying: "BTC"
+  
+# Calibration date/time
 calibration:
+  date: "2025-10-21"  # YYYY-MM-DD
+  time_filter: "12:00:00"  # HH:MM:SS (optional, uses closest available time)
+  
   # Initial parameter guesses
   initial_params:
-    v0: 0.25                # Initial variance
-    kappa: 20.0             # Mean reversion speed
-    theta: 0.24             # Long-term variance
-    sigma: 5.0              # Vol-of-vol
-    rho: -0.3               # Correlation
+    v0: 0.25
+    kappa: 20.0
+    theta: 0.24
+    sigma: 5.0
+    rho: -0.3
   
   # Parameter bounds
   lower_bounds:
-    v0: 0.04                # Min 20% vol
-    kappa: 0.5              # Min mean reversion
-    theta: 0.04             # Min 20% long-term vol
-    sigma: 0.1              # Min vol-of-vol
-    rho: -0.99              # Min correlation
+    v0: 0.04
+    kappa: 0.5
+    theta: 0.04
+    sigma: 0.1
+    rho: -0.99
   
   upper_bounds:
-    v0: 0.8                 # Max ~89% vol
-    kappa: 80.0             # Max mean reversion
-    theta: 0.8              # Max ~89% long-term vol
-    sigma: 15.0             # Max vol-of-vol
-    rho: -0.01              # Max correlation (negative)
+    v0: 0.8
+    kappa: 80.0
+    theta: 0.8
+    sigma: 15.0
+    rho: -0.01
+
+# Validation settings
+validation:
+  enabled: true
+  # How many hours forward to validate
+  hours_ahead: [1, 3, 6, 12, 24, 48]
+  # Or specify exact dates/times
+  # validation_times:
+  #   - "2025-10-21 13:00:00"
+  #   - "2025-10-21 15:00:00"
+  #   - "2025-10-21 18:00:00"
+
+# Market data filtering
+filtering:
+  min_days: 21
+  max_years: 1.5
+  min_moneyness: 0.75
+  max_moneyness: 1.25
+
+# Market parameters
+market:
+  risk_free_rate: 0.03
 
 # Pricing method settings
 pricing:
@@ -49,19 +64,18 @@ pricing:
 
 # Surface grid settings
 surface_grid:
-  num_strikes: 40           # Number of strike points
-  num_expiries: 30          # Number of expiry points
-  min_price_threshold: 0.1  # Minimum price for valid grid point
+  num_strikes: 40
+  num_expiries: 30
+  min_price_threshold: 0.1
 
 # Implied vol solver settings
 implied_vol:
-  initial_guess: 0.5        # 50% vol
-  lower_bound: 0.05         # 5% vol
-  upper_bound: 2.0          # 200% vol
+  initial_guess: 0.5
+  lower_bound: 0.05
+  upper_bound: 2.0
 
 # Output settings
 output:
-  runs_folder: "runs"
   plot_size:
     width: 1400
     height: 1200
