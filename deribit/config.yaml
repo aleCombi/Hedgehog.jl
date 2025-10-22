@@ -1,0 +1,70 @@
+# Heston Calibration Configuration
+
+# Data paths
+data:
+  parquet_file: "data/deribit_btc_2025-10-21.parquet"
+
+# Market data filtering
+filtering:
+  min_days: 21              # Minimum days to expiry
+  max_years: 1.5            # Maximum years to expiry
+  min_moneyness: 0.75       # Minimum strike/spot ratio
+  max_moneyness: 1.25       # Maximum strike/spot ratio
+
+# Market parameters
+market:
+  risk_free_rate: 0.03      # 3% annualized
+
+# Heston calibration
+calibration:
+  # Initial parameter guesses
+  initial_params:
+    v0: 0.25                # Initial variance
+    kappa: 20.0             # Mean reversion speed
+    theta: 0.24             # Long-term variance
+    sigma: 5.0              # Vol-of-vol
+    rho: -0.3               # Correlation
+  
+  # Parameter bounds
+  lower_bounds:
+    v0: 0.04                # Min 20% vol
+    kappa: 0.5              # Min mean reversion
+    theta: 0.04             # Min 20% long-term vol
+    sigma: 0.1              # Min vol-of-vol
+    rho: -0.99              # Min correlation
+  
+  upper_bounds:
+    v0: 0.8                 # Max ~89% vol
+    kappa: 80.0             # Max mean reversion
+    theta: 0.8              # Max ~89% long-term vol
+    sigma: 15.0             # Max vol-of-vol
+    rho: -0.01              # Max correlation (negative)
+
+# Pricing method settings
+pricing:
+  method: "CarrMadan"
+  carr_madan:
+    alpha: 1.0
+    grid_size: 32.0
+
+# Surface grid settings
+surface_grid:
+  num_strikes: 40           # Number of strike points
+  num_expiries: 30          # Number of expiry points
+  min_price_threshold: 0.1  # Minimum price for valid grid point
+
+# Implied vol solver settings
+implied_vol:
+  initial_guess: 0.5        # 50% vol
+  lower_bound: 0.05         # 5% vol
+  upper_bound: 2.0          # 200% vol
+
+# Output settings
+output:
+  runs_folder: "runs"
+  plot_size:
+    width: 1400
+    height: 1200
+  camera_angle:
+    azimuth: 30
+    elevation: 30

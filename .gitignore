@@ -15,3 +15,5 @@ docsbuild/
 *.jl.cov
 *.jl.*.cov
 *.jl.mem
+
+deribit/runs
