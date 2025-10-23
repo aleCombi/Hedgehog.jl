@@ -53,7 +53,6 @@ function parse_dt(s::AbstractString)
     try
         return DateTime(str)  # supports both " " and "T"
     catch
-        # Try explicit formats if needed
         try
             return DateTime(str, dateformat"yyyy-mm-dd HH:MM:SS")
         catch
@@ -93,7 +92,7 @@ function period_ms(p::Period)::Int
 end
 
 """
-extract_file_dt(file_basename) -> Union{Date,Time,Nothing,Nothing}
+extract_file_dt(file_basename)
 
 From file name like "batch_20251021-120022707313.parquet"
 returns (Date("2025-10-21"), Time("12:00:00")) if parsable, else (nothing,nothing).
@@ -109,17 +108,35 @@ function extract_file_dt(fname::AbstractString)
 end
 
 """
+Nicely format a ΔT label vs the calibration anchor, plus the absolute timestamp.
+
+Example: "ΔT=+1d 2h 05m 03s @ 2025-10-22 14:05:03"
+Only nonzero components are shown (except 0s if everything else is zero).
+"""
+function format_delta_label(calib_dt::DateTime, vdt::DateTime)::String
+    ms = Dates.value(vdt - calib_dt)
+    sign = ms < 0 ? "-" : "+"
+    absms = abs(ms)
+    d  = absms ÷ MS_PER_DAY
+    r1 = absms % MS_PER_DAY
+    h  = r1 ÷ MS_PER_HOUR
+    r2 = r1 % MS_PER_HOUR
+    m  = r2 ÷ MS_PER_MIN
+    s  = (r2 % MS_PER_MIN) ÷ 1000
+
+    parts = String[]
+    d > 0 && push!(parts, "$(d)d")
+    h > 0 && push!(parts, "$(h)h")
+    (m > 0 || (d==0 && h==0 && (m>0 || s>0))) && push!(parts, @sprintf("%02dm", m))
+    (s > 0 || isempty(parts)) && push!(parts, @sprintf("%02ds", s))
+
+    stamp = Dates.format(vdt, dateformat"yyyy-mm-dd HH:MM:SS")
+    return "ΔT=$(sign)$(join(parts, " ")) @ $(stamp)"
+end
+
+"""
 find_parquet_file(base_path, date_str, underlying; time_filter=nothing, selection="closest")
  -> String
-
-Find parquet file under:
-  <root>/data_parquet/deribit_chain/date=YYYY-MM-DD/underlying=<underlying>/*.parquet
-
-If `time_filter` provided (HH:MM:SS), it will select:
-- selection="closest" (default): file with time closest to target time (same date)
-- selection="floor": the most recent file not after target time (same date). If none <= target, falls back to earliest file of that date.
-
-If no `time_filter`, returns the first available parquet.
 """
 function find_parquet_file(base_path, date_str, underlying; time_filter=nothing, selection::AbstractString="closest")
     date_obj    = Date(date_str)
@@ -173,7 +190,6 @@ function find_parquet_file(base_path, date_str, underlying; time_filter=nothing,
         println("Selected file closest to $time_filter: $(basename(chosen))")
         return chosen
     elseif lowercase(selection) == "floor"
-        # choose the latest time <= target_time; if none, choose earliest of that day
         not_after = filter(c -> c.time <= target_time, candidates)
         if !isempty(not_after)
             idx = argmax([Dates.value(c.time) for c in not_after])
@@ -181,7 +197,6 @@ function find_parquet_file(base_path, date_str, underlying; time_filter=nothing,
             println("Selected file (floor) at or before $time_filter: $(basename(chosen))")
             return chosen
         else
-            # fallback to earliest of the day
             idx = argmin([Dates.value(c.time) for c in candidates])
             chosen = candidates[idx].file
             println("No file at/before $time_filter; selected earliest: $(basename(chosen))")
@@ -208,7 +223,7 @@ function load_market_data(base_path, date_str, underlying, time_filter, rate, fi
 end
 
 """
-validate_calibration(market_surface, calibrated_heston, pricing_method, rate, iv_config; validation_name="")
+validate_calibration(...)
  -> Dict with metrics and arrays used later for CSV/plots.
 """
 function validate_calibration(market_surface, calibrated_heston, pricing_method,
@@ -249,7 +264,6 @@ function validate_calibration(market_surface, calibrated_heston, pricing_method,
             )
             push!(heston_vols, solve(calib, RootFinderAlgo()).u)
         catch
-            # Fall back to market vol if inversion fails
             push!(heston_vols, market_vols[i])
         end
     end
@@ -296,7 +310,6 @@ filter_params = (
     max_moneyness = config["filtering"]["max_moneyness"]
 )
 
-# selection mode for file choice in validation (default "closest")
 selection_mode = if haskey(config, "validation") &&
                     haskey(config["validation"], "schedule") &&
                     config["validation"]["schedule"] !== nothing &&
@@ -364,7 +377,6 @@ calibrated_heston = HestonInputs(
     calibrated_params.σ, calibrated_params.ρ
 )
 
-# pricing method (kept minimal here; you can branch on method if needed)
 pricing_method = CarrMadan(
     config["pricing"]["carr_madan"]["alpha"],
     config["pricing"]["carr_madan"]["grid_size"],
@@ -396,12 +408,10 @@ validation_metrics = [calib_metrics]
 if get(config, "validation", Dict())["enabled"]
     println("\n[4] Validating on future time periods...")
 
-    # Anchor DateTime (calibration)
     base_date = Date(calib_date)
     base_time = calib_time === nothing ? Time("12:00:00") : Time(calib_time)
     calib_dt  = DateTime(base_date, base_time)
 
-    # Build list of DateTimes to validate
     validation_times = DateTime[]
 
     if haskey(config["validation"], "schedule") && config["validation"]["schedule"] !== nothing
@@ -411,8 +421,8 @@ if get(config, "validation", Dict())["enabled"]
         start_at  = get(sched, "start_at", nothing)
         max_steps = get(sched, "max_steps", nothing)
 
-        step_period    = parse_period(every_str)
-        horizon = parse_period(for_str)
+        step_period = parse_period(every_str)
+        horizon     = parse_period(for_str)
 
         anchor_dt = start_at === nothing ? calib_dt : parse_dt(start_at)
 
@@ -437,20 +447,36 @@ if get(config, "validation", Dict())["enabled"]
         end
     end
 
+    # --- NEW: avoid duplicate snapshots (skip if the same parquet file appears again)
+    processed_files = Set{String}()
+
     for (idx, vdt) in enumerate(validation_times)
-        println("\n  Validation period $(idx): $(vdt)")
+        println("\n  Validation target $(idx): $(vdt)")
 
         val_date_str = Dates.format(Date(vdt), dateformat"yyyy-mm-dd")
         val_time_str = Dates.format(Time(vdt), dateformat"HH:MM:SS")
 
+        # Peek the file that would be chosen; if duplicate, skip
+        chosen_file = find_parquet_file(base_path, val_date_str, underlying; time_filter=val_time_str, selection=selection_mode)
+        if chosen_file in processed_files
+            println("  ↪ Skipping (duplicate snapshot file): $(basename(chosen_file))")
+            continue
+        end
+
         try
-            val_surface, _ = load_market_data(
+            val_surface, val_file = load_market_data(
                 base_path, val_date_str, underlying, val_time_str, rate, filter_params; selection=selection_mode
             )
 
-            Δms    = Dates.value(vdt - calib_dt)
-            Δhours = round(Int, Δms / MS_PER_HOUR)
-            val_name = "T+$(Δhours) hours"
+            # Guard: If load returned a different file path, still dedupe here
+            if val_file in processed_files
+                println("  ↪ Skipping (duplicate after load): $(basename(val_file))")
+                continue
+            end
+            push!(processed_files, val_file)
+
+            # Precise, unique label: ΔT vs calibration AND absolute timestamp
+            val_name = format_delta_label(calib_dt, vdt)
 
             val_metrics = validate_calibration(
                 val_surface, calibrated_heston, pricing_method, rate, iv_config; validation_name=val_name
@@ -512,8 +538,7 @@ CSV.write(validation_summary_file, summary_df)
 println("✓ Validation summary saved to: $validation_summary_file")
 
 for metrics in validation_metrics
-    period_name = replace(metrics[:name], " " => "_", "+" => "plus")
-
+    period_name = replace(metrics[:name], " " => "_", "+" => "plus", ":" => "")
     detailed_df = DataFrame(
         strike        = [q.payoff.strike for q in metrics[:quotes]],
         expiry_date   = [Date(Dates.epochms2datetime(q.payoff.expiry)) for q in metrics[:quotes]],
@@ -525,7 +550,6 @@ for metrics in validation_metrics
         heston_price  = metrics[:heston_prices],
         price_error   = metrics[:heston_prices] .- metrics[:market_prices]
     )
-
     detailed_file = joinpath(run_folder, "detailed_$(period_name).csv")
     CSV.write(detailed_file, detailed_df)
 end

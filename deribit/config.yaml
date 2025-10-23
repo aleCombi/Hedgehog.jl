@@ -11,7 +11,7 @@ data:
 
 # --- Calibration anchor ---
 calibration:
-  date: "2025-10-21"      # YYYY-MM-DD
+  date: "2025-10-20"      # YYYY-MM-DD
   time_filter: "12:00:00" # HH:MM:SS; used to pick the closest file that day
 
   # Initial parameter guesses
@@ -35,7 +35,7 @@ calibration:
     kappa: 80.0
     theta: 0.8
     sigma: 15.0
-    rho: -0.01
+    rho: 0.99
 
 # --- Validation settings ---
 validation:
@@ -53,21 +53,21 @@ validation:
   # Option C (NEW): periodic schedule
   schedule:
     # Frequency and horizon in compact form: "<int><unit>" where unit is m/h/d
-    every: "30m"     # "15m", "30m", "1h", "2h", "6h", "1d", ...
+    every: "5m"     # "15m", "30m", "1h", "2h", "6h", "1d", ...
     for:   "6h"      # horizon length from anchor; e.g. "2h", "12h", "1d"
     # Optional alternative anchor override; if null, uses (calibration.date + calibration.time_filter)
     start_at: null   # e.g. "2025-10-21 12:00:00"
     # Optional cap on number of steps; null means unlimited by horizon
     max_steps: null  # e.g. 48
     # How to select the file for each target time: "closest" or "floor"
-    selection: "closest"
+    selection: "floor"
 
 # --- Market data filtering ---
 filtering:
   min_days: 14
   max_years: 2
-  min_moneyness: 0.75
-  max_moneyness: 1.25
+  min_moneyness: 0.8
+  max_moneyness: 1.2
 
 # --- Market parameters ---
 market:
@@ -100,3 +100,8 @@ output:
   camera_angle:
     azimuth: 30
     elevation: 30
+
+arb_probe:
+  price_abs_threshold: 50.0    # $
+  price_rel_threshold: 0.02    # 2%
+  vol_pp_threshold: 0.50       # vol percentage points
