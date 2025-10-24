@@ -11,16 +11,35 @@ Represents a single observed implied volatility quote for a specific option.
 # Fields
 - `payoff::TPayoff`: The option contract (contains strike, expiry, call/put, etc.)
 - `implied_vol::TV`: Observed implied volatility
-- `price::TV`: Observed market price
+- `price::TV`: Observed market price (typically mark/mid)
+- `bid::TV`: Bid price (use NaN if unavailable)
+- `ask::TV`: Ask price (use NaN if unavailable)
 """
 struct VolQuote{TPayoff <: AbstractPayoff, TV <: Real}
     payoff::TPayoff
     implied_vol::TV
     price::TV
+    bid::TV
+    ask::TV
 end
 
 """
-    VolQuote(payoff, reference_date, spot, rate, implied_vol)
+    VolQuote(payoff, implied_vol, price; bid=NaN, ask=NaN)
+
+Constructor with optional bid/ask prices.
+"""
+function VolQuote(
+    payoff::AbstractPayoff,
+    implied_vol::Real,
+    price::Real;
+    bid::Real=NaN,
+    ask::Real=NaN
+)
+    return VolQuote(payoff, implied_vol, price, bid, ask)
+end
+
+"""
+    VolQuote(payoff, reference_date, spot, rate, implied_vol; bid=NaN, ask=NaN)
 
 Constructor for VolQuote from implied volatility - calculates price using Black-Scholes.
 """
@@ -29,12 +48,42 @@ function VolQuote(
     reference_date::TimeType,
     spot::Real,
     rate,
-    implied_vol::Real
+    implied_vol::Real;
+    bid::Real=NaN,
+    ask::Real=NaN
 )
     bs_inputs = BlackScholesInputs(reference_date, rate, spot, implied_vol)
     prob = PricingProblem(payoff, bs_inputs)
     price = solve(prob, BlackScholesAnalytic()).price
-    return VolQuote(payoff, implied_vol, price)
+    return VolQuote(payoff, implied_vol, price, bid, ask)
+end
+
+"""
+    bid_ask_spread(q::VolQuote) -> Float64
+
+Calculate bid-ask spread in currency units. Returns NaN if bid/ask unavailable.
+"""
+function bid_ask_spread(q::VolQuote)
+    return q.ask - q.bid
+end
+
+"""
+    bid_ask_spread_pct(q::VolQuote) -> Float64
+
+Calculate bid-ask spread as percentage of mid price. Returns NaN if unavailable.
+"""
+function bid_ask_spread_pct(q::VolQuote)
+    spread = bid_ask_spread(q)
+    return isnan(spread) ? NaN : spread / q.price
+end
+
+"""
+    has_bid_ask(q::VolQuote) -> Bool
+
+Check if quote has valid bid/ask data.
+"""
+function has_bid_ask(q::VolQuote)
+    return !isnan(q.bid) && !isnan(q.ask)
 end
 
 """
@@ -76,6 +125,8 @@ function MarketVolSurface(
     call_puts::AbstractVector{<:AbstractCallPut},
     implied_vols::AbstractVector,
     rate;
+    bids::Union{AbstractVector,Nothing}=nothing,
+    asks::Union{AbstractVector,Nothing}=nothing,
     underlying=Spot(),
     exercise=European(),
     metadata=Dict{Symbol,Any}()
@@ -85,13 +136,26 @@ function MarketVolSurface(
     @assert length(call_puts) == n "Mismatched lengths"
     @assert length(implied_vols) == n "Mismatched lengths"
     
+    if bids !== nothing
+        @assert length(bids) == n "Mismatched bids length"
+    else
+        bids = fill(NaN, n)
+    end
+    
+    if asks !== nothing
+        @assert length(asks) == n "Mismatched asks length"
+    else
+        asks = fill(NaN, n)
+    end
+    
     payoffs = [
         VanillaOption(strikes[i], expiries[i], exercise, call_puts[i], underlying)
         for i in 1:n
     ]
     
     quotes = [
-        VolQuote(payoffs[i], reference_date, spot, rate, implied_vols[i])
+        VolQuote(payoffs[i], reference_date, spot, rate, implied_vols[i]; 
+                bid=bids[i], ask=asks[i])
         for i in 1:n
     ]
     
@@ -99,7 +163,7 @@ function MarketVolSurface(
 end
 
 """
-    MarketVolSurface(reference_date, spot, payoffs, implied_vols, prices; metadata=Dict())
+    MarketVolSurface(reference_date, spot, payoffs, implied_vols, prices; bids=nothing, asks=nothing, metadata=Dict())
 
 Direct constructor when you already have matched vols and prices.
 """
@@ -109,14 +173,28 @@ function MarketVolSurface(
     payoffs::AbstractVector{<:AbstractPayoff},
     implied_vols::AbstractVector,
     prices::AbstractVector;
+    bids::Union{AbstractVector,Nothing}=nothing,
+    asks::Union{AbstractVector,Nothing}=nothing,
     metadata=Dict{Symbol,Any}()
 )
     n = length(payoffs)
     @assert length(implied_vols) == n "Mismatched lengths"
     @assert length(prices) == n "Mismatched lengths"
     
+    if bids !== nothing
+        @assert length(bids) == n "Mismatched bids length"
+    else
+        bids = fill(NaN, n)
+    end
+    
+    if asks !== nothing
+        @assert length(asks) == n "Mismatched asks length"
+    else
+        asks = fill(NaN, n)
+    end
+    
     quotes = [
-        VolQuote(payoffs[i], implied_vols[i], prices[i])
+        VolQuote(payoffs[i], implied_vols[i], prices[i], bids[i], asks[i])
         for i in 1:n
     ]
     
@@ -129,7 +207,8 @@ function filter_quotes(
     surf::MarketVolSurface;
     expiry=nothing,
     strike=nothing,
-    call_put=nothing
+    call_put=nothing,
+    max_spread_pct=nothing
 )
     filtered = surf.quotes
     
@@ -144,6 +223,13 @@ function filter_quotes(
     
     if call_put !== nothing
         filtered = filter(q -> typeof(q.payoff.call_put) == typeof(call_put), filtered)
+    end
+    
+    # Filter by bid-ask spread
+    if max_spread_pct !== nothing
+        filtered = filter(filtered) do q
+            has_bid_ask(q) && bid_ask_spread_pct(q) <= max_spread_pct
+        end
     end
     
     return filtered
@@ -168,6 +254,10 @@ function Base.summary(surf::MarketVolSurface)
     n_calls = count(q -> isa(q.payoff.call_put, Call), surf.quotes)
     n_puts = count(q -> isa(q.payoff.call_put, Put), surf.quotes)
     
+    # Bid-ask statistics
+    quotes_with_ba = filter(has_bid_ask, surf.quotes)
+    n_with_ba = length(quotes_with_ba)
+    
     println("MarketVolSurface Summary:")
     println("  Reference date: $(Dates.epochms2datetime(surf.reference_date))")
     println("  Spot: $(surf.spot)")
@@ -176,6 +266,16 @@ function Base.summary(surf::MarketVolSurface)
     println("  Strikes: $(length(strikes)) ($(minimum(strikes)) to $(maximum(strikes)))")
     println("  Implied Vol range: $(round(minimum(vols), digits=4)) to $(round(maximum(vols), digits=4))")
     println("  Price range: $(round(minimum(prices), digits=2)) to $(round(maximum(prices), digits=2))")
+    
+    if n_with_ba > 0
+        spreads_pct = [bid_ask_spread_pct(q) * 100 for q in quotes_with_ba]
+        println("  Bid-Ask data: $n_with_ba quotes")
+        println("    Spread range: $(round(minimum(spreads_pct), digits=2))% to $(round(maximum(spreads_pct), digits=2))%")
+        println("    Avg spread: $(round(mean(spreads_pct), digits=2))%")
+    else
+        println("  Bid-Ask data: Not available")
+    end
+    
     println("  Metadata: $(surf.metadata)")
 end
 
@@ -290,6 +390,7 @@ function load_deribit_parquet(
         max_years = get(filter_params, :max_years, 2.0)
         min_moneyness = get(filter_params, :min_moneyness, 0.5)
         max_moneyness = get(filter_params, :max_moneyness, 1.5)
+        max_spread_pct = get(filter_params, :max_spread_pct, nothing)
         
         min_expiry = reference_date + Day(min_days)
         max_expiry = reference_date + Year(floor(Int, max_years)) + 
@@ -306,10 +407,24 @@ function load_deribit_parquet(
             
             moneyness = row.strike / spot
             
-            expiry_date >= min_expiry &&
-            expiry_date <= max_expiry &&
-            moneyness >= min_moneyness &&
-            moneyness <= max_moneyness
+            # Basic filters
+            meets_basic = expiry_date >= min_expiry &&
+                         expiry_date <= max_expiry &&
+                         moneyness >= min_moneyness &&
+                         moneyness <= max_moneyness
+            
+            # Optional spread filter
+            if max_spread_pct !== nothing && meets_basic
+                if !ismissing(row.bid_price) && !ismissing(row.ask_price) &&
+                   row.bid_price > 0 && row.ask_price > row.bid_price
+                    spread_pct = (row.ask_price - row.bid_price) / row.mark_price
+                    return spread_pct <= max_spread_pct
+                else
+                    return false  # Exclude if no valid bid-ask
+                end
+            end
+            
+            return meets_basic
         end
     end
     
@@ -317,6 +432,8 @@ function load_deribit_parquet(
     expiries = Date[]
     call_puts = AbstractCallPut[]
     implied_vols = Float64[]
+    bids = Float64[]
+    asks = Float64[]
     
     for row in eachrow(df_filtered)
         push!(strikes, Float64(row.strike))
@@ -334,6 +451,19 @@ function load_deribit_parquet(
         push!(call_puts, option_type)
         
         push!(implied_vols, row.mark_iv / 100.0)
+        
+        # Extract bid/ask if available
+        if !ismissing(row.bid_price) && row.bid_price > 0
+            push!(bids, Float64(row.bid_price))
+        else
+            push!(bids, NaN)
+        end
+        
+        if !ismissing(row.ask_price) && row.ask_price > 0
+            push!(asks, Float64(row.ask_price))
+        else
+            push!(asks, NaN)
+        end
     end
     
     metadata = Dict{Symbol, Any}(
@@ -344,7 +474,7 @@ function load_deribit_parquet(
         :original_count => nrow(df),
         :filtered_count => length(strikes)
     )
-    
+    @show bids
     return MarketVolSurface(
         reference_date,
         spot,
@@ -353,6 +483,8 @@ function load_deribit_parquet(
         call_puts,
         implied_vols,
         rate,
+        bids=bids,
+        asks=asks,
         metadata=metadata
     )
 end

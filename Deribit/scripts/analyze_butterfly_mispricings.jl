@@ -1,6 +1,6 @@
 # analyze_butterfly_mispricings.jl
 # Butterfly spread mispricing detection and reversion tracking
-# Replaces: vol_arb_probe.jl (now focuses on butterflies)
+# IMPROVED VERSION: Loads market snapshots once, then tracks all butterflies efficiently
 
 using Revise, Hedgehog
 using Dates: @dateformat_str
@@ -117,69 +117,91 @@ if isempty(butterflies)
 end
 
 # ===========================
-# [5] Track Reversion
+# [5] Load Market Snapshots (ONCE!)
 # ===========================
 
-println("\n[4] Tracking butterfly reversion over next 2 hours...")
-println("This will take some time as it loads multiple market snapshots...")
+println("\n[4] Loading market snapshots for reversion tracking...")
+println("This will load market data for the next 2 hours (8 snapshots @ 15-min intervals)...")
 
-reversions = ButterflyReversion[]
+market_snapshots = Deribit.load_tracking_snapshots(
+    initial_time,
+    base_path,
+    underlying,
+    rate,
+    filter_params,
+    selection_mode
+)
 
-for (i, butterfly) in enumerate(butterflies)
-    print("\r  Processing butterfly $i/$(length(butterflies))...")
+if isempty(market_snapshots)
+    @warn "No market snapshots loaded. Cannot track reversion."
+    println("\nSkipping reversion analysis.")
+else
+    println("✓ Loaded $(length(market_snapshots)) snapshots for tracking")
+    
+    # ===========================
+    # [6] Track All Butterflies (EFFICIENTLY!)
+    # ===========================
+    
+    println("\n[5] Tracking butterfly reversion for all $(length(butterflies)) butterflies...")
+    println("This is now much faster since we've already loaded all snapshots!")
+    
+    reversions = ButterflyReversion[]
+    
+    for (i, butterfly) in enumerate(butterflies)
+        print("\r  Processing butterfly $i/$(length(butterflies))...")
+        
         reversion = Deribit.track_butterfly_reversion(
-        butterfly,
-        initial_time,
-        base_path,
-        underlying,
-        rate,
-        filter_params,
-        selection_mode,
-        pricing_method,
-        heston_inputs,
-        min_gain_threshold
-    )
-    push!(reversions, reversion)
-end
-println("\r  Completed tracking $(length(reversions)) butterflies")
-
-# ===========================
-# [6] Save Results
-# ===========================
-
-println("\n[5] Saving results...")
-
-save_butterfly_analysis(butterflies, reversions, run_folder)
-
-# ===========================
-# [7] Display Summary
-# ===========================
-
-print_butterfly_summary(butterflies, reversions, min_gain_threshold)
-
-# Show top opportunities
-println("\nTop 10 Butterflies by Absolute Price Error:")
-sorted_bf = sort(butterflies, by = b -> abs(b.price_error), rev=true)
-for (i, bf) in enumerate(sorted_bf[1:min(10, length(sorted_bf))])
-    direction = bf.underpriced ? "LONG" : "SHORT"
-    @printf("  %2d) %s %s [%.0f/%.0f/%.0f] exp=%s  error=\$%.2f (%.1f%%)\n",
-        i, direction, bf.option_type, bf.K1, bf.K2, bf.K3, bf.expiry_date,
-        bf.price_error, bf.rel_price_error * 100)
-end
-
-# Show best performing reversions
-if !isempty(reversions)
-    println("\nTop 10 Reversions by Max Gain:")
-    sorted_rev = sort(reversions, by = r -> r.max_gain, rev=true)
-    for (i, rev) in enumerate(sorted_rev[1:min(10, length(sorted_rev))])
-        bf = rev.butterfly
+            butterfly,
+            initial_time,
+            market_snapshots,
+            min_gain_threshold
+        )
+        push!(reversions, reversion)
+    end
+    println("\r  ✓ Completed tracking $(length(reversions)) butterflies")
+    
+    # ===========================
+    # [7] Save Results
+    # ===========================
+    
+    println("\n[6] Saving results...")
+    
+    save_butterfly_analysis(butterflies, reversions, run_folder)
+    
+    # ===========================
+    # [8] Display Summary
+    # ===========================
+    
+    print_butterfly_summary(butterflies, reversions, min_gain_threshold)
+    
+    # Show top opportunities
+    println("\nTop 10 Butterflies by Absolute Price Error:")
+    sorted_bf = sort(butterflies, by = b -> abs(b.price_error), rev=true)
+    for (i, bf) in enumerate(sorted_bf[1:min(10, length(sorted_bf))])
         direction = bf.underpriced ? "LONG" : "SHORT"
-        status = rev.reverted ? "✓" : "✗"
-        @printf("  %2d) %s %s %s [%.0f/%.0f/%.0f]  max_gain=%.2f%%  final=%.2f%%\n",
-            i, status, direction, bf.option_type, bf.K1, bf.K2, bf.K3,
-            rev.max_gain * 100, rev.final_gain * 100)
+        @printf("  %2d) %s %s [%.0f/%.0f/%.0f] exp=%s  error=\$%.2f (%.1f%%)\n",
+            i, direction, bf.option_type, bf.K1, bf.K2, bf.K3, bf.expiry_date,
+            bf.price_error, bf.rel_price_error * 100)
+    end
+    
+    # Show best performing reversions
+    if !isempty(reversions)
+        println("\nTop 10 Reversions by Max Gain:")
+        sorted_rev = sort(reversions, by = r -> r.max_gain, rev=true)
+        for (i, rev) in enumerate(sorted_rev[1:min(10, length(sorted_rev))])
+            bf = rev.butterfly
+            direction = bf.underpriced ? "LONG" : "SHORT"
+            status = rev.reverted ? "✓" : "✗"
+            @printf("  %2d) %s %s %s [%.0f/%.0f/%.0f]  max_gain=%.2f%%  final=%.2f%%\n",
+                i, status, direction, bf.option_type, bf.K1, bf.K2, bf.K3,
+                rev.max_gain * 100, rev.final_gain * 100)
+        end
     end
 end
+
+# ===========================
+# [9] Final Summary
+# ===========================
 
 println("\n" * "="^70)
 println("Butterfly Analysis Complete!")

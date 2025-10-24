@@ -16,4 +16,5 @@ docsbuild/
 *.jl.*.cov
 *.jl.mem
 
-deribit/scripts/runs
+Deribit/runs
+Deribit/scripts7runs

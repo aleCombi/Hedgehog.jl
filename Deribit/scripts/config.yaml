@@ -113,12 +113,12 @@ arb_probe:
 
 butterfly:
   # Minimum price error to flag butterfly as mispriced
-  price_abs_threshold: 20.0    # currency units ($)
-  price_rel_threshold: 0.05    # 5% of butterfly price
+  price_abs_threshold: 10000.0    # currency units ($)
+  price_rel_threshold: 0.1    # 5% of butterfly price
   
   # Minimum gain threshold to consider position "reverted"
   # (as fraction of position cost, e.g., 0.10 = 10% gain required)
-  min_gain_threshold: 0.10
+  min_gain_threshold: 0.1
   
   # Reversion tracking settings
   tracking_horizon: "2h"        # How long to track (hardcoded to 2h in current implementation)
