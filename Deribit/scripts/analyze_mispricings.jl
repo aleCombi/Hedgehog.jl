@@ -3,7 +3,7 @@
 # Replaces: vol_arb_probe.jl
 
 using Revise, Hedgehog
-using Deribit
+using Deribit, Printf
 
 println("="^70)
 println("Deribit BTC Options: Mispricing & Island Probe (Calibration Snapshot)")
@@ -13,7 +13,7 @@ println("="^70)
 # [1] Load Configuration
 # ===========================
 
-config_path = joinpath(@__DIR__, "..", "config.yaml")
+config_path = joinpath(@__DIR__, "config.yaml")
 config = load_config(config_path)
 
 # Create run folder
@@ -57,7 +57,7 @@ summary(mkt_surface)
 # ===========================
 
 println("\n[2] Calibrating Heston model...")
-calib_result = calibrate_heston(
+calib_result = Deribit.calibrate_heston(
     mkt_surface,
     rate,
     calib_cfg.initial_params;

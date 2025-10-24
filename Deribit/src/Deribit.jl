@@ -20,6 +20,7 @@ include("fit_statistics.jl")
 include("mispricing.jl")
 include("visualization.jl")
 include("config.jl")
+include("butterfly_analysis.jl")
 
 # Export data loading functions
 export extract_file_dt,
@@ -83,4 +84,5 @@ export load_config,
        save_config_copy,
        get_plot_size
 
+export ButterflyReversion, save_butterfly_analysis, print_butterfly_summary
 end # module

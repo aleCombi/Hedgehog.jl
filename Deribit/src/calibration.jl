@@ -6,7 +6,7 @@ using Printf
 using Hedgehog
 
 """
-    DeribitResult
+    HestonCalibrationResult
 
 Container for Heston calibration results.
 
@@ -20,7 +20,7 @@ Container for Heston calibration results.
 - `n_quotes`: Number of options used in calibration
 - `parquet_file`: Source data file
 """
-struct DeribitResult
+struct HestonCalibrationResult
     # Calibrated parameters
     v0::Float64
     κ::Float64
@@ -44,7 +44,7 @@ end
 
 """
     calibrate_heston(market_surface, rate, initial_params; lb, ub)
-    -> DeribitResult
+    -> HestonCalibrationResult
 
 Calibrate Heston model to market data.
 
@@ -56,7 +56,7 @@ Calibrate Heston model to market data.
 - `ub`: Upper bounds vector [v0, κ, θ, σ, ρ]
 
 # Returns
-DeribitResult with calibrated parameters and metadata
+HestonCalibrationResult with calibrated parameters and metadata
 
 # Example
 ```julia
@@ -80,7 +80,7 @@ function calibrate_heston(market_surface, rate, initial_params; lb, ub, parquet_
     reference_date = Dates.epochms2datetime(market_surface.reference_date)
     spot = market_surface.spot
     
-    return DeribitResult(
+    return HestonCalibrationResult(
         result.u[1],  # v0
         result.u[2],  # κ
         result.u[3],  # θ
@@ -90,14 +90,14 @@ function calibrate_heston(market_surface, rate, initial_params; lb, ub, parquet_
         spot,
         rate,
         result.objective,
-        result.retcode,
+        Symbol(result.retcode),  # Convert enum to Symbol
         length(market_surface.quotes),
         parquet_file
     )
 end
 
 """
-    to_heston_inputs(calib::DeribitResult) -> HestonInputs
+    to_heston_inputs(calib::HestonCalibrationResult) -> HestonInputs
 
 Convert calibration result to HestonInputs for pricing.
 
@@ -108,7 +108,7 @@ heston_inputs = to_heston_inputs(calib_result)
 price = solve(PricingProblem(payoff, heston_inputs), method)
 ```
 """
-function to_heston_inputs(calib::DeribitResult)
+function to_heston_inputs(calib::HestonCalibrationResult)
     return HestonInputs(
         calib.reference_date,
         calib.rate,
@@ -122,11 +122,11 @@ function to_heston_inputs(calib::DeribitResult)
 end
 
 """
-    print_calibration_summary(calib::DeribitResult)
+    print_calibration_summary(calib::HestonCalibrationResult)
 
 Print formatted calibration summary to stdout.
 """
-function print_calibration_summary(calib::DeribitResult)
+function print_calibration_summary(calib::HestonCalibrationResult)
     println("\n" * "="^70)
     println("Heston Calibration Results")
     println("="^70)
@@ -147,18 +147,18 @@ function print_calibration_summary(calib::DeribitResult)
 end
 
 """
-    save_calibration_params(calib::DeribitResult, filepath::String; 
+    save_calibration_params(calib::HestonCalibrationResult, filepath::String; 
                            calib_date="", calib_file="")
 
 Save calibration parameters to a text file.
 
 # Arguments
-- `calib`: DeribitResult
+- `calib`: HestonCalibrationResult
 - `filepath`: Output file path
 - `calib_date`: Optional calibration date string for header
 - `calib_file`: Optional calibration file basename for header
 """
-function save_calibration_params(calib::DeribitResult, filepath::String;
+function save_calibration_params(calib::HestonCalibrationResult, filepath::String;
                                 calib_date="", calib_file="")
     open(filepath, "w") do io
         println(io, "Heston Calibration Results")
@@ -191,7 +191,7 @@ function save_calibration_params(calib::DeribitResult, filepath::String;
 end
 
 """
-    get_param_tuple(calib::DeribitResult) -> NamedTuple
+    get_param_tuple(calib::HestonCalibrationResult) -> NamedTuple
 
 Extract parameters as a named tuple.
 
@@ -204,6 +204,6 @@ params = get_param_tuple(calib_result)
 println("Initial variance: ", params.v0)
 ```
 """
-function get_param_tuple(calib::DeribitResult)
+function get_param_tuple(calib::HestonCalibrationResult)
     return (v0=calib.v0, κ=calib.κ, θ=calib.θ, σ=calib.σ, ρ=calib.ρ)
 end
