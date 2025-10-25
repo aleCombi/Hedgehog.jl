@@ -126,6 +126,167 @@ function find_parquet_file(base_path, date_str, underlying;
     end
 end
 
+using Dates, DataFrames, Parquet2
+
+############################
+# Filtering configuration  #
+############################
+
+"""
+    FilterParams(; min_days=0, max_years=Inf, min_moneyness=0.0,
+                   max_moneyness=Inf, max_spread_pct=nothing)
+
+Holds filtering parameters for Deribit option chains.
+
+- `min_days` / `max_years`: expiry window relative to reference timestamp
+- `min_moneyness` / `max_moneyness`: strike / spot bounds
+- `max_spread_pct`: optional bid/ask spread limit (e.g. 0.25 = 25%)
+"""
+Base.@kwdef struct FilterParams
+    min_days::Int = 0
+    max_years::Float64 = Inf
+    min_moneyness::Float64 = 0.0
+    max_moneyness::Float64 = Inf
+    max_spread_pct::Union{Nothing,Float64} = nothing
+end
+
+"""
+    apply_deribit_filters(df; ref_dt, surface_spot, params::FilterParams)
+
+Return a filtered DataFrame based on the given parameters.
+If all parameters are "empty" (min_days=0, max_years=Inf, etc.), this effectively returns the same DataFrame.
+"""
+function apply_deribit_filters(df; ref_dt::DateTime, surface_spot::Real, params::FilterParams)
+    # If it's the "empty" filter, just return df directly
+    if params.min_days == 0 && params.max_years == Inf &&
+       params.min_moneyness == 0.0 && params.max_moneyness == Inf &&
+       params.max_spread_pct === nothing
+        return df
+    end
+
+    # Construct expiry window (if finite)
+    min_expiry_dt = ref_dt + Day(params.min_days)
+    max_expiry_dt = isfinite(params.max_years) ?
+                    (ref_dt + Year(floor(Int, params.max_years)) +
+                     Day(round(Int, (params.max_years - floor(params.max_years)) * 365))) :
+                    DateTime(9999,12,31)
+
+    return filter(df) do row
+        expiry_dt = DateTime(row.expiry) + Hour(8)
+        mny = row.strike / surface_spot
+        meets_basic = (expiry_dt >= min_expiry_dt) &&
+                      (expiry_dt <= max_expiry_dt) &&
+                      (mny >= params.min_moneyness) &&
+                      (mny <= params.max_moneyness)
+
+        if params.max_spread_pct === nothing || !meets_basic
+            return meets_basic
+        end
+
+        if !ismissing(row.bid_price) && !ismissing(row.ask_price) &&
+           row.bid_price > 0 && row.ask_price > row.bid_price &&
+           !ismissing(row.mark_price) && row.mark_price > 0
+            spread_pct = (row.ask_price - row.bid_price) / row.mark_price
+            return meets_basic && (spread_pct <= params.max_spread_pct)
+        else
+            return false
+        end
+    end
+end
+
+
+############################
+# Main Loader
+############################
+
+function load_deribit_parquet(
+    parquet_file::String;
+    rate::Float64 = 0.0,
+    params::FilterParams = FilterParams(),  # empty filter by default
+    check_mark::Bool = true,
+    price_tol_usd::Float64 = 10.0
+)
+    df = DataFrame(Parquet2.Dataset(parquet_file))
+
+    ref_dt = DateTime(df.ts[1])
+    surface_spot = df.underlying_price[1]
+
+    # Basic validity: mark and IV must exist and be > 0
+    df_valid = filter(row ->
+        !ismissing(row.mark_price) && row.mark_price > 0 &&
+        !ismissing(row.mark_iv) && row.mark_iv > 0,
+        df
+    )
+
+    # Apply filters (no-op if params is empty)
+    df_filtered = apply_deribit_filters(df_valid;
+        ref_dt=ref_dt, surface_spot=surface_spot, params=params)
+
+    strikes, expiries, call_puts, implied_vols = Float64[], DateTime[], AbstractCallPut[], Float64[]
+    bids, asks = Float64[], Float64[]
+    n_checked, n_ok = 0, 0
+    bad_rows = Int[]
+
+    for (i, row) in enumerate(eachrow(df_filtered))
+        strike = Float64(row.strike)
+        expiry = DateTime(row.expiry) + Hour(8)  # 08:00 UTC
+        cp     = row.option_type == "C" ? Call() : Put()
+        vol    = row.mark_iv / 100.0
+        row_spot = row.underlying_price
+
+        push!(strikes, strike)
+        push!(expiries, expiry)
+        push!(call_puts, cp)
+        push!(implied_vols, vol)
+        push!(bids, (!ismissing(row.bid_price) && row.bid_price>0) ? row.bid_price*row_spot : NaN)
+        push!(asks, (!ismissing(row.ask_price) && row.ask_price>0) ? row.ask_price*row_spot : NaN)
+
+        if check_mark
+            try
+                ref_t   = DateTime(row.ts)
+                mark_usd = row.mark_price * row_spot
+                payoff    = VanillaOption(strike, expiry, European(), cp, Spot())
+                bs_inputs = BlackScholesInputs(ref_t, rate, row_spot, vol)
+                bs_usd    = solve(PricingProblem(payoff, bs_inputs), BlackScholesAnalytic()).price
+                n_checked += 1
+                (abs(bs_usd - mark_usd) <= price_tol_usd) ? (n_ok += 1) : push!(bad_rows, i)
+            catch
+                push!(bad_rows, i)
+            end
+        end
+    end
+
+    metadata = Dict{Symbol,Any}(
+        :source=>"Deribit",
+        :underlying=>df.underlying[1],
+        :data_file=>basename(parquet_file),
+        :timestamp_ms=>df.ts[1],
+        :original_count=>nrow(df),
+        :filtered_count=>length(strikes),
+        :ref_datetime=>string(ref_dt),
+        :filters=>params,
+        :check_enabled=>check_mark,
+        :price_tol_usd=>price_tol_usd,
+        :check_n_ok=>n_ok,
+        :check_n_total=>n_checked,
+        :check_bad_rows=>bad_rows
+    )
+
+    return MarketVolSurface(
+        ref_dt,
+        surface_spot,
+        strikes,
+        expiries,
+        call_puts,
+        implied_vols,
+        rate,
+        bids=bids,
+        asks=asks,
+        metadata=metadata
+    )
+end
+
+
 """
     load_market_data(base_path, date_str, underlying, time_filter, rate, filter_params; 
                      selection="closest")
@@ -161,6 +322,6 @@ function load_market_data(base_path, date_str, underlying, time_filter, rate, fi
     parquet_file = find_parquet_file(base_path, date_str, underlying; 
                                      time_filter=time_filter, selection=selection)
     println("Loading data from: $(basename(parquet_file))")
-    mkt = Hedgehog.load_deribit_parquet(parquet_file; rate=rate, filter_params=filter_params)
+    mkt = load_deribit_parquet(parquet_file; rate=rate, filter_params=filter_params)
     return mkt, parquet_file
 end

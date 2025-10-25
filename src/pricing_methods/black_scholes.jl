@@ -59,6 +59,6 @@ function solve(
         N = Normal()
         D * cp * (F * cdf(N, cp * d1) - K * cdf(N, cp * d2))
     end
-
+    
     return AnalyticSolution(prob, method, price)
 end

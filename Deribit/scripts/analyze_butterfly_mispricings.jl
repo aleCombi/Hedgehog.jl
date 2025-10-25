@@ -63,6 +63,40 @@ mkt_surface, parquet_file = load_market_data(
 println("\nCalibration Data Summary:")
 summary(mkt_surface)
 
+# Add this right after loading calibration snapshot in analyze_butterfly_mispricings.jl
+# After line: println("\nCalibration Data Summary:")
+
+println("\n" * "="^70)
+println("BID-ASK DIAGNOSTICS")
+println("="^70)
+
+# Check bid/ask availability
+n_quotes = length(mkt_surface.quotes)
+n_with_bid = count(q -> !isnan(q.bid), mkt_surface.quotes)
+n_with_ask = count(q -> !isnan(q.ask), mkt_surface.quotes)
+
+println("Total quotes: $n_quotes")
+println("Quotes with bid: $n_with_bid")
+println("Quotes with ask: $n_with_ask")
+
+# Sample first 5 quotes to check values
+println("\nFirst 5 quotes:")
+for (i, q) in enumerate(mkt_surface.quotes[1:min(5, n_quotes)])
+    @printf("  %d) Strike=%.0f, Price=%.4f, Bid=%.4f, Ask=%.4f, Spread=%.2f%%\n",
+            i, q.payoff.strike, q.price, q.bid, q.ask,
+            (q.ask - q.bid) / q.price * 100)
+end
+
+# Check if price is between bid and ask
+n_valid = 0
+for q in mkt_surface.quotes
+    if !isnan(q.bid) && !isnan(q.ask) && q.bid <= q.price <= q.ask
+        n_valid += 1
+    end
+end
+println("\nQuotes where bid ≤ price ≤ ask: $n_valid / $n_quotes")
+println("="^70 * "\n")
+
 initial_time = Dates.epochms2datetime(mkt_surface.reference_date)
 
 # ===========================

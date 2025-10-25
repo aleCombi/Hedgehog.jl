@@ -201,7 +201,7 @@ for (idx, filepath) in enumerate(parquet_files)
     
     # Load surface
     println("  Loading market data...")
-    surface = Hedgehog.load_deribit_parquet(
+    surface = load_deribit_parquet(
         filepath,
         rate=RATE,
         filter_params=FILTER_PARAMS
