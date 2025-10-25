@@ -122,6 +122,7 @@ function compute_fit_statistics(market_surface, calibrated_heston, pricing_metho
         catch
             # Fallback: keep market IV if inversion fails
             push!(heston_vols, market_vols[i])
+            print("⚠️  Warning: IV inversion failed for quote index $(i). Using market IV.\n")
         end
     end
 
