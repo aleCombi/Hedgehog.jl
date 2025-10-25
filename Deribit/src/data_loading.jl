@@ -235,8 +235,8 @@ function load_deribit_parquet(
 
         # Keep bid/ask as provided (raw units). If you historically stored USD via *spot,
         # you can switch to *forward here. We keep raw to avoid double-guessing parquet semantics.
-        push!(bids, (!ismissing(row.bid_price) && row.bid_price > 0) ? row.bid_price : NaN)
-        push!(asks, (!ismissing(row.ask_price) && row.ask_price > 0) ? row.ask_price : NaN)
+        push!(bids, (!ismissing(row.bid_price) && row.bid_price > 0) ? row.bid_price*fwd : NaN)
+        push!(asks, (!ismissing(row.ask_price) && row.ask_price > 0) ? row.ask_price*fwd : NaN)
 
         if check_mark
             try

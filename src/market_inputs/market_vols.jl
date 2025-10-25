@@ -66,7 +66,7 @@ end
 """
     bid_ask_spread(q::VolQuote) -> Float64
 """
-bid_ask_spread(q::VolQuote) = q.ask - q.bid
+bid_ask_spread(q::VolQuote) = (q.ask - q.bid)
 
 """
     bid_ask_spread_pct(q::VolQuote) -> Float64

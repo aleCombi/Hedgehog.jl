@@ -7,7 +7,7 @@ data:
   # Root directory that contains one or more subfolders each with:
   #   data_parquet/deribit_chain/date=YYYY-MM-DD/underlying=BTC/*.parquet
   base_path: "C:/repos/DeribitVols/data/downloaded/all_20251022-192655"
-  underlying: "BTC"
+  underlying: "ETH"
 
 # --- Calibration anchor ---
 calibration:
@@ -64,10 +64,11 @@ validation:
 
 # --- Market data filtering ---
 filtering:
-  min_days: 20
-  max_years: 2
+  min_days: 15
+  max_years: 0.5
   min_moneyness: 0.8
   max_moneyness: 1.2
+  max_spread_pct: 0.2
 
 # --- Market parameters ---
 market:
