@@ -1,8 +1,10 @@
 # data_loading.jl
 # Functions for discovering and loading Deribit parquet data files
-
 using Dates
 using Hedgehog
+using DataFrames
+using Parquet2
+using Statistics
 
 """
     extract_file_dt(fname::AbstractString) -> (Union{Date,Nothing}, Union{Time,Nothing})
@@ -10,12 +12,6 @@ using Hedgehog
 Extract date and time from a filename like "batch_20251021-120022707313.parquet".
 Returns (Date, Time) if parsable, otherwise (nothing, nothing).
 Only the first 6 time digits (HHMMSS) are parsed.
-
-# Example
-```julia
-date, time = extract_file_dt("batch_20251021-120022707313.parquet")
-# Returns: (Date("2025-10-21"), Time("12:00:22"))
-```
 """
 function extract_file_dt(fname::AbstractString)
     if (m = match(r"batch_(\d{8})-(\d{6})", fname)) !== nothing
@@ -30,30 +26,10 @@ end
     find_parquet_file(base_path, date_str, underlying; time_filter=nothing, selection="closest")
     -> String
 
-Find a parquet file matching the specified date and underlying asset.
-
 Searches in: `<base_path>/<root>/data_parquet/deribit_chain/date=YYYY-MM-DD/underlying=<underlying>/*.parquet`
-
-# Arguments
-- `base_path`: Root directory containing data folders
-- `date_str`: Date string in "YYYY-MM-DD" format
-- `underlying`: Asset symbol (e.g., "BTC", "ETH")
-- `time_filter`: Optional time string "HH:MM:SS" to filter by time of day
-- `selection`: Selection mode when multiple files exist:
-  - `"closest"`: Pick file with time closest to target time (default)
-  - `"floor"`: Pick latest file not after target time (or earliest if none before)
-
-# Returns
-Path to the selected parquet file
-
-# Example
-```julia
-file = find_parquet_file("/data/deribit", "2025-10-21", "BTC"; 
-                         time_filter="12:00:00", selection="floor")
-```
 """
 function find_parquet_file(base_path, date_str, underlying; 
-                          time_filter=nothing, selection::AbstractString="closest")
+                           time_filter=nothing, selection::AbstractString="closest")
     date_obj = Date(date_str)
     date_folder = Dates.format(date_obj, dateformat"yyyy-mm-dd")
 
@@ -126,8 +102,6 @@ function find_parquet_file(base_path, date_str, underlying;
     end
 end
 
-using Dates, DataFrames, Parquet2
-
 ############################
 # Filtering configuration  #
 ############################
@@ -136,11 +110,9 @@ using Dates, DataFrames, Parquet2
     FilterParams(; min_days=0, max_years=Inf, min_moneyness=0.0,
                    max_moneyness=Inf, max_spread_pct=nothing)
 
-Holds filtering parameters for Deribit option chains.
-
-- `min_days` / `max_years`: expiry window relative to reference timestamp
-- `min_moneyness` / `max_moneyness`: strike / spot bounds
-- `max_spread_pct`: optional bid/ask spread limit (e.g. 0.25 = 25%)
+- min_days / max_years: expiry window relative to reference timestamp
+- min_moneyness / max_moneyness: strike / forward bounds (per-quote)
+- max_spread_pct: optional bid/ask spread limit (e.g. 0.25 = 25%)
 """
 Base.@kwdef struct FilterParams
     min_days::Int = 0
@@ -151,12 +123,13 @@ Base.@kwdef struct FilterParams
 end
 
 """
-    apply_deribit_filters(df; ref_dt, surface_spot, params::FilterParams)
+    apply_deribit_filters(df; ref_dt, params::FilterParams)
 
 Return a filtered DataFrame based on the given parameters.
-If all parameters are "empty" (min_days=0, max_years=Inf, etc.), this effectively returns the same DataFrame.
+Uses each row's forward for moneyness.
+Assumes `df.underlying_price` exists (rename below if your column differs).
 """
-function apply_deribit_filters(df; ref_dt::DateTime, surface_spot::Real, params::FilterParams)
+function apply_deribit_filters(df; ref_dt::DateTime, params::FilterParams)
     # If it's the "empty" filter, just return df directly
     if params.min_days == 0 && params.max_years == Inf &&
        params.min_moneyness == 0.0 && params.max_moneyness == Inf &&
@@ -171,9 +144,16 @@ function apply_deribit_filters(df; ref_dt::DateTime, surface_spot::Real, params:
                      Day(round(Int, (params.max_years - floor(params.max_years)) * 365))) :
                     DateTime(9999,12,31)
 
+    # NOTE: adjust column name if your parquet uses a different forward column.
+    has_forward = hasproperty(df, :underlying_price)
+    @assert has_forward "Expected column `underlying_price` in dataframe."
+
     return filter(df) do row
-        expiry_dt = DateTime(row.expiry) + Hour(8)
-        mny = row.strike / surface_spot
+        expiry_dt = DateTime(row.expiry) + Hour(8) # Deribit 08:00 UTC convention
+        fwd = row.underlying_price
+        (ismissing(fwd) || fwd <= 0) && return false
+
+        mny = row.strike / fwd
         meets_basic = (expiry_dt >= min_expiry_dt) &&
                       (expiry_dt <= max_expiry_dt) &&
                       (mny >= params.min_moneyness) &&
@@ -186,6 +166,7 @@ function apply_deribit_filters(df; ref_dt::DateTime, surface_spot::Real, params:
         if !ismissing(row.bid_price) && !ismissing(row.ask_price) &&
            row.bid_price > 0 && row.ask_price > row.bid_price &&
            !ismissing(row.mark_price) && row.mark_price > 0
+            # Spread computed vs mark (same units as raw parquet)
             spread_pct = (row.ask_price - row.bid_price) / row.mark_price
             return meets_basic && (spread_pct <= params.max_spread_pct)
         else
@@ -194,62 +175,86 @@ function apply_deribit_filters(df; ref_dt::DateTime, surface_spot::Real, params:
     end
 end
 
-
 ############################
 # Main Loader
 ############################
 
+"""
+    load_deribit_parquet(parquet_file; rate=0.0, params=FilterParams(), check_mark=true, price_tol_usd=10.0)
+    -> MarketVolSurface
+
+Loads a parquet snapshot and constructs a MarketVolSurface with per-quote forwards.
+- Assumes `underlying_price` column exists (futures; we ignore DF and set rate=0 for pricing checks).
+- Re-pricing check uses BS with spot := forward, rate = 0.0.
+"""
 function load_deribit_parquet(
     parquet_file::String;
-    rate::Float64 = 0.0,
+    rate::Float64 = 0.0,                    # ignored in pricing (kept for signature parity)
     params::FilterParams = FilterParams(),  # empty filter by default
     check_mark::Bool = true,
     price_tol_usd::Float64 = 10.0
 )
     df = DataFrame(Parquet2.Dataset(parquet_file))
+    @assert hasproperty(df, :underlying_price) "Expected `underlying_price` column in parquet."
 
     ref_dt = DateTime(df.ts[1])
-    surface_spot = df.underlying_price[1]
 
-    # Basic validity: mark and IV must exist and be > 0
+    # Basic validity: mark and IV and forward must exist and be > 0
     df_valid = filter(row ->
         !ismissing(row.mark_price) && row.mark_price > 0 &&
-        !ismissing(row.mark_iv) && row.mark_iv > 0,
+        !ismissing(row.mark_iv) && row.mark_iv > 0 &&
+        !ismissing(row.underlying_price) && row.underlying_price > 0,
         df
     )
 
     # Apply filters (no-op if params is empty)
-    df_filtered = apply_deribit_filters(df_valid;
-        ref_dt=ref_dt, surface_spot=surface_spot, params=params)
+    df_filtered = apply_deribit_filters(df_valid; ref_dt=ref_dt, params=params)
 
-    strikes, expiries, call_puts, implied_vols = Float64[], DateTime[], Hedgehog.AbstractCallPut[], Float64[]
+    strikes  = Float64[]
+    expiries = DateTime[]
+    call_puts = Hedgehog.AbstractCallPut[]
+    implied_vols = Float64[]
+    forwards = Float64[]
     bids, asks = Float64[], Float64[]
+
     n_checked, n_ok = 0, 0
     bad_rows = Int[]
 
     for (i, row) in enumerate(eachrow(df_filtered))
         strike = Float64(row.strike)
-        expiry = DateTime(row.expiry) + Hour(8)  # 08:00 UTC
+        expiry = DateTime(row.expiry) + Hour(8)      # 08:00 UTC
         cp     = row.option_type == "C" ? Call() : Put()
         vol    = row.mark_iv / 100.0
-        row_spot = row.underlying_price
+        fwd    = Float64(row.underlying_price)
 
         push!(strikes, strike)
         push!(expiries, expiry)
         push!(call_puts, cp)
         push!(implied_vols, vol)
-        push!(bids, (!ismissing(row.bid_price) && row.bid_price>0) ? row.bid_price*row_spot : NaN)
-        push!(asks, (!ismissing(row.ask_price) && row.ask_price>0) ? row.ask_price*row_spot : NaN)
+        push!(forwards, fwd)
+
+        # Keep bid/ask as provided (raw units). If you historically stored USD via *spot,
+        # you can switch to *forward here. We keep raw to avoid double-guessing parquet semantics.
+        push!(bids, (!ismissing(row.bid_price) && row.bid_price > 0) ? row.bid_price : NaN)
+        push!(asks, (!ismissing(row.ask_price) && row.ask_price > 0) ? row.ask_price : NaN)
 
         if check_mark
             try
-                ref_t   = DateTime(row.ts)
-                mark_usd = row.mark_price * row_spot
+                ref_t = DateTime(row.ts)
                 payoff    = VanillaOption(strike, expiry, European(), cp, Spot())
-                bs_inputs = BlackScholesInputs(ref_t, rate, row_spot, vol)
-                bs_usd    = solve(PricingProblem(payoff, bs_inputs), BlackScholesAnalytic()).price
+
+                # Zero-rate everywhere; price as BS with spot := forward.
+                bs_inputs = BlackScholesInputs(ref_t, 0.0, fwd, vol)
+                model_price = solve(PricingProblem(payoff, bs_inputs), BlackScholesAnalytic()).price
+
+                # Compare in the same units as parquet mark_price.
+                # If your parquet marks are quoted "per underlying", compare row.mark_price vs model_price.
+                # If marks are USD and model_price is per-underlying, multiply both by fwd consistently.
+                mark_ref = row.mark_price
+                diff = abs(model_price - mark_ref)
+
                 n_checked += 1
-                (abs(bs_usd - mark_usd) <= price_tol_usd) ? (n_ok += 1) : push!(bad_rows, i)
+                (diff <= price_tol_usd) ? (n_ok += 1) : push!(bad_rows, i)
             catch
                 push!(bad_rows, i)
             end
@@ -274,48 +279,23 @@ function load_deribit_parquet(
 
     return MarketVolSurface(
         ref_dt,
-        surface_spot,
         strikes,
         expiries,
         call_puts,
-        implied_vols,
-        rate,
+        forwards,
+        implied_vols;
         bids=bids,
         asks=asks,
         metadata=metadata
     )
 end
 
-
 """
-    load_market_data(base_path, date_str, underlying, time_filter, rate, filter_params; 
-                     selection="closest")
+    load_market_data(base_path, date_str, underlying, time_filter, rate, filter_params; selection="closest")
     -> (MarketVolSurface, parquet_path)
 
-Load market data from a parquet file with the specified filters.
-
-# Arguments
-- `base_path`: Root directory containing data folders
-- `date_str`: Date string in "YYYY-MM-DD" format
-- `underlying`: Asset symbol (e.g., "BTC", "ETH")
-- `time_filter`: Time string "HH:MM:SS" for file selection
-- `rate`: Risk-free rate
-- `filter_params`: Named tuple with filtering parameters:
-  - `min_days`: Minimum days to expiry
-  - `max_years`: Maximum years to expiry
-  - `min_moneyness`: Minimum moneyness ratio
-  - `max_moneyness`: Maximum moneyness ratio
-- `selection`: File selection mode ("closest" or "floor")
-
-# Returns
-Tuple of (MarketVolSurface, parquet_file_path)
-
-# Example
-```julia
-filter_params = (min_days=14, max_years=2, min_moneyness=0.8, max_moneyness=1.2)
-surface, path = load_market_data("/data", "2025-10-21", "BTC", "12:00:00", 
-                                  0.03, filter_params)
-```
+Wrapper that finds a parquet and loads it with the given filters.
+`rate` is accepted for signature parity but ignored (we use zero-rate pricing elsewhere).
 """
 function load_market_data(base_path, date_str, underlying, time_filter, rate, filter_params;
                           selection="closest", check_mark=true, price_tol_usd=10.0)
@@ -324,7 +304,7 @@ function load_market_data(base_path, date_str, underlying, time_filter, rate, fi
     println("Loading data from: $(basename(parquet_file))")
     mkt = load_deribit_parquet(parquet_file;
         rate=rate,
-        params=filter_params,          # FilterParams() for empty filter or pass `nothing` if you changed API
+        params=filter_params,
         check_mark=check_mark,
         price_tol_usd=price_tol_usd
     )

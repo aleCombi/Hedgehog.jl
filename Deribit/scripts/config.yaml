@@ -64,14 +64,14 @@ validation:
 
 # --- Market data filtering ---
 filtering:
-  min_days: 14
+  min_days: 20
   max_years: 2
   min_moneyness: 0.8
   max_moneyness: 1.2
 
 # --- Market parameters ---
 market:
-  risk_free_rate: 0.03
+  risk_free_rate: 0.0
 
 # --- Pricing method settings ---
 pricing:

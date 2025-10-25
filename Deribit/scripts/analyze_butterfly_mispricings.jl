@@ -87,13 +87,16 @@ for (i, q) in enumerate(mkt_surface.quotes[1:min(5, n_quotes)])
             (q.ask - q.bid) / q.price * 100)
 end
 
-# Check if price is between bid and ask
-n_valid = 0
-for q in mkt_surface.quotes
-    if !isnan(q.bid) && !isnan(q.ask) && q.bid <= q.price <= q.ask
-        n_valid += 1
+let
+    n_valid = 0
+    for q in mkt_surface.quotes
+        if !isnan(q.bid) && !isnan(q.ask) && q.bid <= q.price <= q.ask
+            n_valid += 1
+        end
     end
+    println("Valid quotes: $n_valid / $(length(mkt_surface.quotes))")
 end
+
 println("\nQuotes where bid ≤ price ≤ ask: $n_valid / $n_quotes")
 println("="^70 * "\n")
 
