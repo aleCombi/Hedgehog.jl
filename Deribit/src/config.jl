@@ -46,14 +46,22 @@ filter_params = extract_filter_params(config)
 ```
 """
 function extract_filter_params(config::Dict)
+    if !haskey(config, "filtering")
+        return FilterParams()
+    end
+
     filtering = config["filtering"]
-    return (
-        min_days = filtering["min_days"],
-        max_years = filtering["max_years"],
-        min_moneyness = filtering["min_moneyness"],
-        max_moneyness = filtering["max_moneyness"]
+    getv(k, default) = haskey(filtering, k) ? filtering[k] : default
+
+    return FilterParams(
+        min_days       = Int(getv("min_days", 0)),
+        max_years      = Float64(getv("max_years", Inf)),
+        min_moneyness  = Float64(getv("min_moneyness", 0.0)),
+        max_moneyness  = Float64(getv("max_moneyness", Inf)),
+        max_spread_pct = getv("max_spread_pct", nothing)
     )
 end
+
 
 """
     extract_iv_config(config::Dict) -> Dict

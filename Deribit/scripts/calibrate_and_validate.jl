@@ -17,7 +17,7 @@ config_path = joinpath(@__DIR__, "config.yaml")
 config = load_config(config_path)
 
 # Create run folder
-run_folder = create_run_folder(@__DIR__, "heston_calib")
+run_folder = create_run_folder(joinpath(@__DIR__, ".."), "heston_calib")
 save_config_copy(config_path, run_folder)
 
 # Extract config sections
@@ -40,7 +40,7 @@ plot_width, plot_height = get_plot_size(config)
 
 println("\n[1] Loading calibration data...")
 calib_surface, calib_file = load_market_data(
-    base_path, calib_date, underlying, calib_time, rate, filter_params;
+    base_path, calib_date, underlying, calib_time, rate,filter_params;
     selection=selection_mode
 )
 

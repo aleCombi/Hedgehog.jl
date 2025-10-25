@@ -222,7 +222,7 @@ function load_deribit_parquet(
     df_filtered = apply_deribit_filters(df_valid;
         ref_dt=ref_dt, surface_spot=surface_spot, params=params)
 
-    strikes, expiries, call_puts, implied_vols = Float64[], DateTime[], AbstractCallPut[], Float64[]
+    strikes, expiries, call_puts, implied_vols = Float64[], DateTime[], Hedgehog.AbstractCallPut[], Float64[]
     bids, asks = Float64[], Float64[]
     n_checked, n_ok = 0, 0
     bad_rows = Int[]
@@ -317,11 +317,16 @@ surface, path = load_market_data("/data", "2025-10-21", "BTC", "12:00:00",
                                   0.03, filter_params)
 ```
 """
-function load_market_data(base_path, date_str, underlying, time_filter, rate, filter_params; 
-                         selection="closest")
-    parquet_file = find_parquet_file(base_path, date_str, underlying; 
+function load_market_data(base_path, date_str, underlying, time_filter, rate, filter_params;
+                          selection="closest", check_mark=true, price_tol_usd=10.0)
+    parquet_file = find_parquet_file(base_path, date_str, underlying;
                                      time_filter=time_filter, selection=selection)
     println("Loading data from: $(basename(parquet_file))")
-    mkt = load_deribit_parquet(parquet_file; rate=rate, filter_params=filter_params)
+    mkt = load_deribit_parquet(parquet_file;
+        rate=rate,
+        params=filter_params,          # FilterParams() for empty filter or pass `nothing` if you changed API
+        check_mark=check_mark,
+        price_tol_usd=price_tol_usd
+    )
     return mkt, parquet_file
 end
