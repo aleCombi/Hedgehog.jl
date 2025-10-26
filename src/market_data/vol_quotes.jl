@@ -81,7 +81,7 @@ function VolQuote(
         compute_price = function(iv)
             market_inputs = BlackScholesInputs(ref_date, zero_rate_curve, forward, iv)
             prob = PricingProblem(payoff, market_inputs)
-            return solve(prob, BlackScholesAnalytic()).price
+            return solve(prob, BlackScholesAnalytic()).price / underlying_price
         end
         
         # Compute and validate mid price (always have mid_iv)

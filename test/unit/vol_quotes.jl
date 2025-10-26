@@ -20,9 +20,9 @@ using Logging
             underlying_type = FutureUnderlying,
             bid_iv = 48.7 / 100,
             ask_iv = 48.7 / 100,
-            mid_price = 0.00981108 * underlying_price,
-            bid_price = 0.0095 * underlying_price,
-            ask_price = 0.01 * underlying_price,
+            mid_price = 0.00981108,
+            bid_price = 0.0095,
+            ask_price = 0.01,
             last_price = NaN,
             open_interest = 148.0,
             volume = 101.3,
@@ -34,9 +34,9 @@ using Logging
         @test vq.underlying_price == underlying_price
         @test vq.underlying_type == FutureUnderlying
         @test vq.mid_iv ≈ 0.487
-        @test vq.mid_price ≈ 0.00981108 * underlying_price
-        @test vq.bid_price ≈ 0.0095 * underlying_price
-        @test vq.ask_price ≈ 0.01 * underlying_price
+        @test vq.mid_price ≈ 0.00981108
+        @test vq.bid_price ≈ 0.0095
+        @test vq.ask_price ≈ 0.01
         @test isnan(vq.last_price)
         @test vq.open_interest == 148.0
         @test vq.volume == 101.3
@@ -103,9 +103,9 @@ using Logging
             vq_consistent = VolQuote(
                 strike, expiry, option_type, underlying_price, mark_iv, timestamp;
                 underlying_type = FutureUnderlying,
-                mid_price = 0.04213933 * underlying_price,
-                bid_price = 0.0415 * underlying_price,
-                ask_price = 0.042 * underlying_price,
+                mid_price = 0.04213933,
+                bid_price = 0.0415,
+                ask_price = 0.042,
                 open_interest = 7093.4,
                 volume = 62.3,
                 source = :deribit,
@@ -113,7 +113,7 @@ using Logging
             )
             
             @test vq_consistent isa VolQuote
-            @test vq_consistent.mid_price ≈ 0.04213933 * underlying_price
+            @test vq_consistent.mid_price ≈ 0.04213933
         end
         println("✓ Consistent quote created without warnings")
         
