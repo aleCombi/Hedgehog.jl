@@ -60,6 +60,9 @@ include("calibration/calibration.jl")
 # data ingestion
 include("data_ingestion/deribit_vols.jl")
 
+# visualization
+include("visualization/vol_surface_plotting.jl")
+
 # Utilities
 export yearfrac, add_yearfrac
 
@@ -106,4 +109,5 @@ export VolQuote, UnderlyingType, SpotUnderlying, ForwardUnderlying, FutureUnderl
 export FuturesBasedInfo, SpotBasedInfo, MarketVolSurface
 export volquote_from_deribit, volquotes_from_deribit, volquotes_from_deribit_parquet, marketvolsurface_from_deribit_parquet
 
+export plot_vol_slices_by_expiry, plot_vol_slices_by_strike, plot_vol_surface
 end
