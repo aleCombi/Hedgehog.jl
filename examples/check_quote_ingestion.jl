@@ -6,7 +6,7 @@ json_str = """{"instrument_name":"BTC-26DEC25-120000-C","underlying":"BTC","expi
 data = JSON.parse(json_str)
 
 # Convert to VolQuote
-vq = volquote_from_deribit(data)
+vq = Hedgehog.volquote_from_deribit(data)
 
 # Inspect the result
 println("Strike: $(vq.payoff.strike)")

@@ -45,7 +45,7 @@ vq = volquote_from_deribit(data)
 function volquote_from_deribit(data::Dict; use_mark::Bool=true)
     # Parse basic fields
     strike = Float64(data["strike"])
-    expiry = unix2datetime(data["expiry"] / 1000)  # Convert ms to seconds
+    expiry = unix2datetime(data["expiry"] / 1000) + Hour(8)  # Convert ms to seconds and adjust to deribit settlement convention (8 AM UTC)
     timestamp = unix2datetime(data["ts"] / 1000)
     
     # Parse option type
@@ -70,16 +70,16 @@ function volquote_from_deribit(data::Dict; use_mark::Bool=true)
     
     # Prices (convert from fraction of underlying to absolute)
     mid_price = use_mark && haskey(data, "mark_price") && !isnothing(data["mark_price"]) ?
-                Float64(data["mark_price"]) * underlying_price : NaN
+                Float64(data["mark_price"]) : NaN
     
     bid_price = haskey(data, "bid_price") && !isnothing(data["bid_price"]) ?
-                Float64(data["bid_price"]) * underlying_price : NaN
+                Float64(data["bid_price"]) : NaN
     
     ask_price = haskey(data, "ask_price") && !isnothing(data["ask_price"]) ?
-                Float64(data["ask_price"]) * underlying_price : NaN
+                Float64(data["ask_price"]) : NaN
     
     last_price = haskey(data, "last_price") && !isnothing(data["last_price"]) ?
-                 Float64(data["last_price"]) * underlying_price : NaN
+                 Float64(data["last_price"]) : NaN
     
     # Market microstructure
     open_interest = haskey(data, "open_interest") && !isnothing(data["open_interest"]) ?
