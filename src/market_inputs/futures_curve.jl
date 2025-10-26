@@ -75,7 +75,7 @@ function FuturesCurve(
     reference_date::Real,
     tenors::AbstractVector,
     forward_prices::AbstractVector;
-    interp = (u, t) -> LinearInterpolation(u, t; extrapolation = ExtrapolationType.Flat),
+    interp = (u, t) -> LinearInterpolation(u, t; extrapolation = ExtrapolationType.Constant),
 )
     if isempty(tenors)
         throw(ArgumentError("Input 'tenors' cannot be empty."))
@@ -196,3 +196,6 @@ Get the y-values (forward prices) used in the interpolator.
 - A vector of forward prices.
 """
 spine_forwards(curve::FuturesCurve) = curve.interpolator.u
+
+Base.length(curve::FuturesCurve) = length(curve.interpolator.t)
+Base.length(curve::FlatForwardCurve) = 1

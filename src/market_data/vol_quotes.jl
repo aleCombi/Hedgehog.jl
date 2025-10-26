@@ -46,7 +46,7 @@ function VolQuote(
     underlying::Underlying = Spot(),
     rate_curve::Union{Nothing, AbstractRateCurve} = nothing,
     reference_date::Union{Nothing, TimeType, Real} = nothing,
-    price_tolerance::Real = 1e-6,
+    price_tolerance::Real = 5e-3,
 )
     if exercise_style isa American
         throw(ArgumentError("American option pricing not yet implemented. VolQuote currently only supports European options. American options require Barone-Adesi-Whaley approximation which is not yet available."))

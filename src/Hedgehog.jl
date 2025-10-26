@@ -44,6 +44,7 @@ include("pricing_methods/least_squares_montecarlo.jl")
 
 # market data
 include("market_data/vol_quotes.jl")
+include("market_data/market_vol_surface.jl")
 
 # sensitivities
 include("greeks/greeks_problem.jl")
@@ -101,5 +102,8 @@ export RootFinderAlgo, OptimizerAlgo, CalibrationProblem, BasketPricingProblem
 
 # market data
 export VolQuote, UnderlyingType, SpotUnderlying, ForwardUnderlying, FutureUnderlying
+
+export FuturesBasedInfo, SpotBasedInfo, MarketVolSurface
+export volquote_from_deribit, volquotes_from_deribit, volquotes_from_deribit_parquet, marketvolsurface_from_deribit_parquet
 
 end

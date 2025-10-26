@@ -225,3 +225,82 @@ function validate_spot_against_quotes(
         @warn "Large spread in quote underlying prices" mean=mean_price min=min_price max=max_price relative_spread=price_spread
     end
 end
+
+"""
+    build_futures_curve_from_quotes(quotes::Vector{<:VolQuote}, reference_date::Real; tolerance=1e-4)
+
+Extract a FuturesCurve from quotes by grouping by expiry and averaging underlying prices.
+
+# Arguments
+- `quotes`: Vector of VolQuote objects with FutureUnderlying type
+- `reference_date`: Reference date in ticks for the curve
+- `tolerance`: Relative tolerance for detecting inconsistent prices at same expiry
+
+# Returns
+- `FuturesCurve` object
+"""
+function build_futures_curve_from_quotes(
+    quotes::Vector{<:VolQuote},
+    reference_date::Real;
+    tolerance::Real = 1e-4
+)
+    if isempty(quotes)
+        throw(ArgumentError("Cannot build futures curve from empty quote vector"))
+    end
+    
+    # Check all quotes are futures-based
+    underlying_types = unique(q.underlying_type for q in quotes)
+    if length(underlying_types) > 1
+        throw(ArgumentError("Mixed underlying types in quotes: $underlying_types. Cannot build futures curve."))
+    end
+    
+    if first(underlying_types) != FutureUnderlying
+        throw(ArgumentError("Quotes must have FutureUnderlying type to build futures curve. Got: $(first(underlying_types))"))
+    end
+    
+    # Group quotes by expiry
+    expiry_groups = Dict{Real, Vector{Float64}}()
+    
+    for q in quotes
+        expiry = q.payoff.expiry
+        if !haskey(expiry_groups, expiry)
+            expiry_groups[expiry] = []
+        end
+        push!(expiry_groups[expiry], q.underlying_price)
+    end
+    
+    # For each expiry, check coherence and compute average
+    expiries = Float64[]
+    forward_prices = Float64[]
+    
+    for (expiry, prices) in expiry_groups
+        if isempty(prices)
+            continue
+        end
+        
+        mean_price = mean(prices)
+        max_price = maximum(prices)
+        min_price = minimum(prices)
+        
+        # Check for inconsistencies
+        max_deviation = max(abs(max_price - mean_price), abs(min_price - mean_price))
+        relative_error = max_deviation / mean_price
+        
+        if relative_error > tolerance
+            @warn "Inconsistent underlying prices at expiry" expiry=Dates.epochms2datetime(expiry) mean=mean_price min=min_price max=max_price relative_error n_quotes=length(prices)
+        end
+        
+        # Convert expiry to year fraction from reference date
+        yf = yearfrac(reference_date, expiry)
+        push!(expiries, yf)
+        push!(forward_prices, mean_price)
+    end
+    
+    # Sort by expiry (year fraction)
+    sorted_indices = sortperm(expiries)
+    expiries = expiries[sorted_indices]
+    forward_prices = forward_prices[sorted_indices]
+    
+    # Build FuturesCurve
+    return FuturesCurve(reference_date, expiries, forward_prices)
+end
