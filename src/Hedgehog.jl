@@ -41,6 +41,9 @@ include("pricing_methods/montecarlo.jl")
 include("pricing_methods/carr_madan.jl")
 include("pricing_methods/least_squares_montecarlo.jl")
 
+# market data
+include("market_data/market_vols.jl")
+
 # sensitivities
 include("greeks/greeks_problem.jl")
 
@@ -91,5 +94,8 @@ export ForwardAD, FiniteDifference, GreekProblem, SecondOrderGreekProblem, Analy
 
 # Calibration
 export RootFinderAlgo, OptimizerAlgo, CalibrationProblem, BasketPricingProblem
+
+# market data
+export VolQuote, UnderlyingType, SpotUnderlying, ForwardUnderlying, FutureUnderlying
 
 end
