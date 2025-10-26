@@ -46,10 +46,11 @@ data = Dict(
 vq = volquote_from_deribit(data)
 ```
 """
-function volquote_from_deribit(data::Dict; use_mark::Bool=true)
+function volquote_from_deribit(data::Dict; use_mark::Bool=true, price_tolerance::Real=1e-2)
     # Parse basic fields (handle missing)
     strike = ismissing(data["strike"]) ? NaN : Float64(data["strike"])
-    expiry = data["expiry"] isa TimeType ? data["expiry"] : unix2datetime(data["expiry"] / 1000) + Hour(8)
+    expiry = data["expiry"] isa TimeType ? data["expiry"] : unix2datetime(data["expiry"] / 1000)
+    expiry = expiry + Hour(8)  # Deribit expiries are at 08:00 UTC
     timestamp = data["ts"] isa TimeType ? data["ts"] : unix2datetime(data["ts"] / 1000)
     
     # Parse option type
@@ -62,7 +63,6 @@ function volquote_from_deribit(data::Dict; use_mark::Bool=true)
     if use_mark
         mid_iv = ismissing(data["mark_iv"]) ? NaN : Float64(data["mark_iv"]) / 100
     else
-        # If not using mark, would need bid/ask IVs
         throw(ArgumentError("Non-mark IV handling not yet implemented"))
     end
     
@@ -92,8 +92,31 @@ function volquote_from_deribit(data::Dict; use_mark::Bool=true)
     volume = haskey(data, "volume") && !isnothing(data["volume"]) && !ismissing(data["volume"]) ?
              Float64(data["volume"]) : NaN
     
+    # Construct VolQuote - need to capture if there's an inconsistency
+    # We'll check this by comparing provided mid_price with computed if both exist
+    is_inconsistent = false
+    
+    if !isnan(mid_price) && !isnan(mid_iv)
+        # Compute what the price should be from IV
+        # Use zero rate curve for forward pricing
+        ref_date = timestamp
+        zero_rate_curve = FlatRateCurve(0.0; reference_date=ref_date)
+        payoff = VanillaOption(strike, expiry, European(), option_type, Spot())
+        
+        market_inputs = BlackScholesInputs(ref_date, zero_rate_curve, underlying_price, mid_iv)
+        prob = PricingProblem(payoff, market_inputs)
+        computed_price = solve(prob, BlackScholesAnalytic()).price / underlying_price
+        
+        error = abs(computed_price - mid_price) / max(abs(mid_price), 1e-10)
+        is_inconsistent = error > price_tolerance
+        
+        if is_inconsistent
+            @warn "Mid price-IV inconsistency detected" strike expiry option_type provided=mid_price computed=computed_price relative_error=error
+        end
+    end
+    
     # Construct VolQuote
-    return VolQuote(
+    vq = VolQuote(
         strike,
         expiry,
         option_type,
@@ -111,22 +134,22 @@ function volquote_from_deribit(data::Dict; use_mark::Bool=true)
         volume = volume,
         source = :deribit
     )
+    
+    return (vq, is_inconsistent)
 end
 
-function volquotes_from_deribit_parquet(filepath::String; use_mark::Bool=true, skip_errors::Bool=true)
-    df = Parquet2.Dataset(filepath) |> DataFrame
-    data_vector = [Dict(String(col) => row[col] for col in propertynames(df)) for row in eachrow(df)]
-    return volquotes_from_deribit(data_vector; use_mark=use_mark, skip_errors=skip_errors)
-end
-
-function volquotes_from_deribit(data_vector::Vector; use_mark::Bool=true, skip_errors::Bool=true)
+function volquotes_from_deribit(data_vector::Vector; use_mark::Bool=true, skip_errors::Bool=true, price_tolerance::Real=1e-2)
     quotes = VolQuote[]
     errors = []
+    inconsistency_count = 0
     
     for (i, data) in enumerate(data_vector)
         try
-            vq = volquote_from_deribit(data; use_mark=use_mark)
+            vq, is_inconsistent = volquote_from_deribit(data; use_mark=use_mark, price_tolerance=price_tolerance)
             push!(quotes, vq)
+            if is_inconsistent
+                inconsistency_count += 1
+            end
         catch e
             if skip_errors
                 push!(errors, (index=i, instrument=get(data, "instrument_name", "unknown"), error=e))
@@ -138,10 +161,20 @@ function volquotes_from_deribit(data_vector::Vector; use_mark::Bool=true, skip_e
     end
     
     if !isempty(errors)
-        @info "Successfully parsed $(length(quotes)) quotes, failed on $(length(errors)) quotes"
+        @info "Parse summary" successful=length(quotes) failed=length(errors)
+    end
+    
+    if length(quotes) > 0
+        @info "Price-IV consistency" inconsistent_mid=inconsistency_count total=length(quotes) threshold=price_tolerance percentage=round(100*inconsistency_count/length(quotes), digits=2)
     end
     
     return quotes
+end
+
+function volquotes_from_deribit_parquet(filepath::String; use_mark::Bool=true, skip_errors::Bool=true, price_tolerance::Real=1e-2)
+    df = Parquet2.Dataset(filepath) |> DataFrame
+    data_vector = [Dict(String(col) => row[col] for col in propertynames(df)) for row in eachrow(df)]
+    return volquotes_from_deribit(data_vector; use_mark=use_mark, skip_errors=skip_errors, price_tolerance=price_tolerance)
 end
 
 function marketvolsurface_from_deribit_parquet(filepath::String; use_mark::Bool=true, skip_errors::Bool=true, kwargs...)
