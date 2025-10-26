@@ -31,6 +31,7 @@ include("payoffs/payoffs.jl")
 include("market_inputs/vol_surface.jl")
 include("market_inputs/rate_curve.jl")
 include("market_inputs/market_inputs.jl")
+include("market_inputs/futures_curve.jl")
 
 # pricing methods
 include("pricing_methods/pricing_methods.jl")
@@ -42,7 +43,7 @@ include("pricing_methods/carr_madan.jl")
 include("pricing_methods/least_squares_montecarlo.jl")
 
 # market data
-include("market_data/market_vols.jl")
+include("market_data/vol_quotes.jl")
 
 # sensitivities
 include("greeks/greeks_problem.jl")
