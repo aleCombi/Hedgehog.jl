@@ -34,7 +34,14 @@ for (i, vq) in enumerate(surface.quotes[1:min(5, length(surface.quotes))])
     println("  Mid price: ", vq.mid_price, " BTC")
     println("  Timestamp: ", Dates.epochms2datetime(vq.timestamp))
 end
-p2d = Hedgehog.plot_vol_2d_by_expiry(surface; field=:all_price, show_bid_ask=true, max_expiries=8)
-p3d = Hedgehog.plot_vol_surface_3d(surface; field=:all_price)
+plots = Hedgehog.plot_all_expiries_separately(
+        surface;
+        series=[:mid],
+        metric=:price,
+        max_expiries=1
+    )
 
-p = Hedgehog.plot_vol_2d_by_expiry(surface; field=:all_price, separate_subplots=true, max_expiries=6)
+# p3d = Hedgehog.plot_vol_surface_3d(surface; field=:all_price)
+
+# p = Hedgehog.plot_vol_2d_by_expiry(surface; field=:all_price, separate_subplots=true, max_expiries=6)
+s
