@@ -192,32 +192,6 @@ function validate_and_select_price(
 end
 
 """
-    validate_and_select_price(provided, computed, tolerance, label, strike, expiry, option_type)
-
-Helper function to validate provided price against computed price or use computed if not provided.
-Warns if discrepancy exceeds tolerance.
-"""
-function validate_and_select_price(
-    provided::Real,
-    computed::Real,
-    tolerance::Real,
-    label::String,
-    strike::Real,
-    expiry::Real,
-    option_type::AbstractCallPut
-)
-    if isnan(provided)
-        return computed
-    else
-        error = abs(computed - provided) / max(abs(provided), 1e-10)
-        if error > tolerance
-            @warn "$label price-IV inconsistency detected" strike expiry option_type provided computed relative_error=error
-        end
-        return provided
-    end
-end
-
-"""
     iv_to_price(payoff::AbstractPayoff, 
                 underlying_price::Real,
                 iv::Real,
