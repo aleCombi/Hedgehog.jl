@@ -47,5 +47,17 @@ plots = Hedgehog.plot_all_expiries_separately(
 [display(p) for p in plots]
 
 # Custom 3x4 grid with only mid prices for calls
-p = Hedgehog.plot_all_expiries_grid(surface; series=[:mid], metric=:iv, 
+p = Hedgehog.plot_all_expiries_grid(surface; series=[:ask, :bid, :mid], metric=:iv, 
                             option_type=:call)
+# Smooth surface
+p1 = Hedgehog.plot_surface_3d(surface; series=:mid, metric=:iv, option_type=:call)
+display(p1)
+
+# # Wireframe with visible slices
+# p2 = plot_surface_3d_wireframe(surface; series=:mid, metric=:price, option_type=:call)
+# display(p2)
+
+# # Rotate camera for better view
+# p3 = plot_surface_3d_wireframe(surface; series=:mid, metric=:iv, 
+#                                 option_type=:call, camera=(45, 30))
+# display(p3)

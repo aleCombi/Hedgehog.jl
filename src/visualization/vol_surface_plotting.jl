@@ -277,14 +277,15 @@ function plot_all_expiries_grid(
     layout::Union{Nothing, Tuple{Int, Int}} = nothing,
     size::Tuple{Int, Int} = (1200, 800)
 )
-    # Get all the individual plots
-    plots = plot_all_expiries_separately(surface; 
-                                        series=series, 
-                                        metric=metric, 
-                                        max_expiries=max_expiries,
-                                        option_type=option_type)
+    # Get all unique expiries, sorted
+    expiries = sort(unique(q.payoff.expiry for q in surface.quotes))
     
-    n_plots = length(plots)
+    # Limit if requested
+    if !isnothing(max_expiries)
+        expiries = expiries[1:min(max_expiries, length(expiries))]
+    end
+    
+    n_plots = length(expiries)
     
     if n_plots == 0
         error("No plots to display")
@@ -298,9 +299,363 @@ function plot_all_expiries_grid(
         layout = (nrows, ncols)
     end
     
-    # Combine all plots into a grid
-    combined_plot = plot(plots..., layout=layout, size=size, 
-                         plot_title="$(metric == :iv ? "Implied Volatility" : "Price") Surface - All Expiries")
+    # Create empty plot with layout
+    ylabel = metric == :iv ? "Implied Volatility (%)" : "Price (BTC)"
+    combined_plot = plot(layout=layout, size=size, 
+                         plot_title="$(metric == :iv ? "Implied Volatility" : "Price") Surface - All Expiries",
+                         link=:none)  # Don't link axes between subplots
+    
+    # Create each subplot
+    for (i, expiry) in enumerate(expiries)
+        # Get quotes for this specific expiry
+        quotes_for_expiry = filter(q -> q.payoff.expiry == expiry, surface.quotes)
+        
+        if isempty(quotes_for_expiry)
+            continue
+        end
+        
+        # Setup subplot title (shorter format for grid)
+        expiry_date = Dates.format(Dates.epochms2datetime(expiry), "mm/dd HH:MM")
+        
+        # Determine which option types to plot
+        types_to_plot = if option_type == :both
+            [:call, :put]
+        else
+            [option_type]
+        end
+        
+        # Plot each option type
+        for opt_type in types_to_plot
+            # Filter quotes by option type
+            is_call = opt_type == :call
+            filtered_quotes = filter(q -> isa(q.payoff.call_put, Call) == is_call, quotes_for_expiry)
+            
+            if isempty(filtered_quotes)
+                continue
+            end
+            
+            # Sort by strike
+            sort!(filtered_quotes, by = q -> q.payoff.strike)
+            
+            # Extract strikes
+            strikes = [q.payoff.strike for q in filtered_quotes]
+            
+            # Plot each series
+            for s in series
+                # Map series type to field name
+                field = if s == :mid
+                    metric == :iv ? :mid_iv : :mid_price
+                elseif s == :bid
+                    metric == :iv ? :bid_iv : :bid_price
+                else  # :ask
+                    metric == :iv ? :ask_iv : :ask_price
+                end
+                
+                # Extract values
+                values = [getfield(q, field) for q in filtered_quotes]
+                
+                # Convert IV to percentage
+                if metric == :iv
+                    values = values .* 100
+                end
+                
+                # Filter NaN
+                valid_idx = .!isnan.(values)
+                
+                # Plot if we have valid data
+                if any(valid_idx)
+                    # Create label
+                    label = if option_type == :both
+                        "$(titlecase(string(opt_type))) $(titlecase(string(s)))"
+                    elseif length(series) > 1
+                        titlecase(string(s))
+                    else
+                        ""
+                    end
+                    
+                    # Line style
+                    linestyle = s == :mid ? :solid : (s == :bid ? :dash : :dot)
+                    
+                    # Marker shape differs by option type when plotting both
+                    marker = (option_type == :both && opt_type == :put) ? :square : :circle
+                    
+                    plot!(combined_plot, strikes[valid_idx], values[valid_idx];
+                          subplot=i,
+                          label=label, 
+                          marker=marker, 
+                          markersize=3,  # Smaller markers for grid
+                          linewidth=1.5,  # Thinner lines for grid
+                          linestyle=linestyle,
+                          title=expiry_date,
+                          titlefontsize=8,
+                          xlabel="Strike",
+                          ylabel=ylabel,
+                          xguidefontsize=7,
+                          yguidefontsize=7,
+                          xtickfontsize=6,
+                          ytickfontsize=6,
+                          legendfontsize=6,
+                          legend=:best,
+                          xrotation=45,  # Rotate x-axis labels
+                          bottom_margin=3Plots.mm,  # Add margin for rotated labels
+                          left_margin=2Plots.mm)
+                end
+            end
+        end
+    end
     
     return combined_plot
+end
+
+"""
+    plot_surface_3d(surface::MarketVolSurface; 
+                    series=:mid,
+                    metric=:price,
+                    option_type=:call,
+                    size=(1000, 800),
+                    camera=(30, 45))
+
+Create a 3D surface plot showing strike vs expiry vs price/IV.
+
+# Arguments
+- `surface`: MarketVolSurface containing the quote data
+- `series`: Which series to plot - :mid, :bid, or :ask (only one allowed for 3D)
+- `metric`: What to plot - :iv for implied volatility or :price for option prices
+- `option_type`: :call or :put (cannot plot both in 3D)
+- `size`: Figure size as tuple (width, height)
+- `camera`: Camera angle as tuple (elevation, azimuth)
+
+# Returns
+- A 3D surface plot object
+
+# Examples
+```julia
+# Plot mid prices for calls
+p = plot_surface_3d(surface; series=:mid, metric=:price, option_type=:call)
+display(p)
+
+# Plot implied volatility for puts
+p = plot_surface_3d(surface; series=:mid, metric=:iv, option_type=:put)
+display(p)
+
+# Custom camera angle
+p = plot_surface_3d(surface; series=:mid, metric=:price, 
+                    option_type=:call, camera=(45, 60))
+display(p)
+```
+"""
+function plot_surface_3d(
+    surface::MarketVolSurface;
+    series::Symbol = :mid,
+    metric::Symbol = :price,
+    option_type::Symbol = :call,
+    size::Tuple{Int, Int} = (1000, 800),
+    camera::Tuple{Int, Int} = (30, 45)
+)
+    # Validate inputs
+    series in [:mid, :bid, :ask] || throw(ArgumentError("series must be :mid, :bid, or :ask. Got: $series"))
+    metric in [:iv, :price] || throw(ArgumentError("metric must be :iv or :price. Got: $metric"))
+    option_type in [:call, :put] || throw(ArgumentError("option_type must be :call or :put for 3D plots. Got: $option_type"))
+    
+    # Filter quotes by option type
+    is_call = option_type == :call
+    filtered_quotes = filter(q -> isa(q.payoff.call_put, Call) == is_call, surface.quotes)
+    
+    if isempty(filtered_quotes)
+        error("No $(option_type)s found in surface")
+    end
+    
+    # Map series type to field name
+    field = if series == :mid
+        metric == :iv ? :mid_iv : :mid_price
+    elseif series == :bid
+        metric == :iv ? :bid_iv : :bid_price
+    else  # :ask
+        metric == :iv ? :ask_iv : :ask_price
+    end
+    
+    # Extract data
+    strikes = [q.payoff.strike for q in filtered_quotes]
+    expiries = [q.payoff.expiry for q in filtered_quotes]
+    values = [getfield(q, field) for q in filtered_quotes]
+    
+    # Convert IV to percentage
+    if metric == :iv
+        values = values .* 100
+    end
+    
+    # Filter out NaN values
+    valid_idx = .!isnan.(values)
+    strikes = strikes[valid_idx]
+    expiries = expiries[valid_idx]
+    values = values[valid_idx]
+    
+    if isempty(values)
+        error("No valid data points found")
+    end
+    
+    # Convert expiry ticks to days from now
+    now_tick = floor(Int, datetime2unix(now()) * 1000)
+    days_to_expiry = [(exp - now_tick) / (1000 * 60 * 60 * 24) for exp in expiries]
+    
+    # Get unique strikes and expiries for grid
+    unique_strikes = sort(unique(strikes))
+    unique_expiries = sort(unique(expiries))
+    unique_days = sort(unique(days_to_expiry))
+    
+    # Create a grid
+    n_strikes = length(unique_strikes)
+    n_expiries = length(unique_expiries)
+    
+    # Initialize grid with NaN
+    z_grid = fill(NaN, n_strikes, n_expiries)
+    
+    # Fill in the grid
+    for (k, exp, val) in zip(strikes, expiries, values)
+        strike_idx = findfirst(==(k), unique_strikes)
+        expiry_idx = findfirst(==(exp), unique_expiries)
+        if !isnothing(strike_idx) && !isnothing(expiry_idx)
+            z_grid[strike_idx, expiry_idx] = val
+        end
+    end
+    
+    # Convert expiries to days for plotting
+    expiry_days = [(exp - now_tick) / (1000 * 60 * 60 * 24) for exp in unique_expiries]
+    
+    # Setup labels
+    zlabel = metric == :iv ? "Implied Volatility (%)" : "Price (BTC)"
+    title_str = "$(titlecase(string(option_type))) $(titlecase(string(series))) - $(metric == :iv ? "Implied Volatility" : "Price") Surface"
+    
+    # Create 3D surface plot
+    p = plot(unique_strikes, expiry_days, z_grid',
+             st=:surface,
+             xlabel="Strike",
+             ylabel="Days to Expiry",
+             zlabel=zlabel,
+             title=title_str,
+             size=size,
+             camera=camera,
+             colorbar=true,
+             color=:viridis)
+    
+    return p
+end
+
+"""
+    plot_surface_3d_wireframe(surface::MarketVolSurface; 
+                              series=:mid,
+                              metric=:price,
+                              option_type=:call,
+                              size=(1000, 800),
+                              camera=(30, 45))
+
+Create a 3D wireframe plot showing strike vs expiry vs price/IV with individual slices visible.
+
+# Arguments
+- `surface`: MarketVolSurface containing the quote data
+- `series`: Which series to plot - :mid, :bid, or :ask (only one allowed for 3D)
+- `metric`: What to plot - :iv for implied volatility or :price for option prices
+- `option_type`: :call or :put (cannot plot both in 3D)
+- `size`: Figure size as tuple (width, height)
+- `camera`: Camera angle as tuple (elevation, azimuth)
+
+# Returns
+- A 3D wireframe plot object showing individual expiry slices
+
+# Examples
+```julia
+# Plot mid prices for calls as wireframe
+p = plot_surface_3d_wireframe(surface; series=:mid, metric=:price, option_type=:call)
+display(p)
+
+# Plot implied volatility for puts
+p = plot_surface_3d_wireframe(surface; series=:mid, metric=:iv, option_type=:put)
+display(p)
+```
+"""
+function plot_surface_3d_wireframe(
+    surface::MarketVolSurface;
+    series::Symbol = :mid,
+    metric::Symbol = :price,
+    option_type::Symbol = :call,
+    size::Tuple{Int, Int} = (1000, 800),
+    camera::Tuple{Int, Int} = (30, 45)
+)
+    # Validate inputs
+    series in [:mid, :bid, :ask] || throw(ArgumentError("series must be :mid, :bid, or :ask. Got: $series"))
+    metric in [:iv, :price] || throw(ArgumentError("metric must be :iv or :price. Got: $metric"))
+    option_type in [:call, :put] || throw(ArgumentError("option_type must be :call or :put for 3D plots. Got: $option_type"))
+    
+    # Get all unique expiries, sorted
+    all_expiries = sort(unique(q.payoff.expiry for q in surface.quotes))
+    
+    # Setup labels
+    zlabel = metric == :iv ? "Implied Volatility (%)" : "Price (BTC)"
+    title_str = "$(titlecase(string(option_type))) $(titlecase(string(series))) - $(metric == :iv ? "Implied Volatility" : "Price") Surface"
+    
+    # Create empty 3D plot
+    p = plot(xlabel="Strike", ylabel="Days to Expiry", zlabel=zlabel,
+             title=title_str, size=size, camera=camera, legend=false)
+    
+    # Current time for calculating days to expiry
+    now_tick = floor(Int, datetime2unix(now()) * 1000)
+    
+    # Plot each expiry as a separate line in 3D
+    for expiry in all_expiries
+        # Get quotes for this expiry
+        quotes_for_expiry = filter(q -> q.payoff.expiry == expiry, surface.quotes)
+        
+        # Filter by option type
+        is_call = option_type == :call
+        filtered_quotes = filter(q -> isa(q.payoff.call_put, Call) == is_call, quotes_for_expiry)
+        
+        if isempty(filtered_quotes)
+            continue
+        end
+        
+        # Sort by strike
+        sort!(filtered_quotes, by = q -> q.payoff.strike)
+        
+        # Map series type to field name
+        field = if series == :mid
+            metric == :iv ? :mid_iv : :mid_price
+        elseif series == :bid
+            metric == :iv ? :bid_iv : :bid_price
+        else  # :ask
+            metric == :iv ? :ask_iv : :ask_price
+        end
+        
+        # Extract data
+        strikes = [q.payoff.strike for q in filtered_quotes]
+        values = [getfield(q, field) for q in filtered_quotes]
+        
+        # Convert IV to percentage
+        if metric == :iv
+            values = values .* 100
+        end
+        
+        # Filter NaN
+        valid_idx = .!isnan.(values)
+        
+        if !any(valid_idx)
+            continue
+        end
+        
+        # Calculate days to expiry
+        days_to_expiry = (expiry - now_tick) / (1000 * 60 * 60 * 24)
+        
+        # Create arrays for 3D line (all points at same expiry)
+        x_vals = strikes[valid_idx]
+        y_vals = fill(days_to_expiry, sum(valid_idx))
+        z_vals = values[valid_idx]
+        
+        # Plot this expiry slice
+        plot!(p, x_vals, y_vals, z_vals, 
+              linewidth=2, 
+              marker=:circle, 
+              markersize=3,
+              color=:auto)
+    end
+    
+    return p
 end
