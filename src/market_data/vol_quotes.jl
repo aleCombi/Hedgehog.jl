@@ -323,7 +323,7 @@ function price_to_iv(
         [target_price],
         [iv_guess]
     )
-    
+
     # Solve for implied vol using root finding
     sol = Hedgehog.solve(calib, RootFinderAlgo())
     

@@ -37,11 +37,15 @@ end
 plots = Hedgehog.plot_all_expiries_separately(
         surface;
         series=[:mid],
-        metric=:price,
-        max_expiries=1
+        metric=:iv,
+        max_expiries=10
     )
 
 # p3d = Hedgehog.plot_vol_surface_3d(surface; field=:all_price)
 
 # p = Hedgehog.plot_vol_2d_by_expiry(surface; field=:all_price, separate_subplots=true, max_expiries=6)
-s
+[display(p) for p in plots]
+
+# Custom 3x4 grid with only mid prices for calls
+p = Hedgehog.plot_all_expiries_grid(surface; series=[:mid], metric=:iv, 
+                            option_type=:call)

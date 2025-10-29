@@ -227,3 +227,80 @@ function plot_expiry_by_index(
     
     return plot_single_expiry(surface, expiries[idx]; series=series, metric=metric, option_type=option_type)
 end
+
+"""
+    plot_all_expiries_grid(surface::MarketVolSurface; 
+                           series=[:mid, :bid, :ask], 
+                           metric=:price,
+                           max_expiries=nothing,
+                           option_type=:call,
+                           layout=nothing,
+                           size=(1200, 800))
+
+Create a grid of plots showing all expiries in a single figure.
+
+# Arguments
+- `surface`: MarketVolSurface containing the quote data
+- `series`: Which series to plot - vector containing :mid, :bid, and/or :ask
+- `metric`: What to plot - :iv for implied volatility or :price for option prices
+- `max_expiries`: Maximum number of expiries to plot (nothing = all)
+- `option_type`: :call, :put, or :both to plot calls, puts, or both separately
+- `layout`: Tuple (rows, cols) for grid layout. If nothing, automatically determined
+- `size`: Figure size as tuple (width, height)
+
+# Returns
+- A single plot object containing all expiries in a grid
+
+# Examples
+```julia
+# Plot all expiries in an auto-determined grid (calls only)
+p = plot_all_expiries_grid(surface; series=[:mid, :bid, :ask], metric=:price, option_type=:call)
+display(p)
+
+# Plot first 6 expiries in a 2x3 grid (both calls and puts)
+p = plot_all_expiries_grid(surface; series=[:mid], metric=:price, max_expiries=6, 
+                           option_type=:both, layout=(2, 3))
+display(p)
+
+# Plot with custom figure size
+p = plot_all_expiries_grid(surface; series=[:mid], metric=:iv, 
+                           option_type=:call, size=(1600, 1000))
+display(p)
+```
+"""
+function plot_all_expiries_grid(
+    surface::MarketVolSurface;
+    series::Vector{Symbol} = [:mid, :bid, :ask],
+    metric::Symbol = :price,
+    max_expiries::Union{Nothing, Int} = nothing,
+    option_type::Symbol = :call,
+    layout::Union{Nothing, Tuple{Int, Int}} = nothing,
+    size::Tuple{Int, Int} = (1200, 800)
+)
+    # Get all the individual plots
+    plots = plot_all_expiries_separately(surface; 
+                                        series=series, 
+                                        metric=metric, 
+                                        max_expiries=max_expiries,
+                                        option_type=option_type)
+    
+    n_plots = length(plots)
+    
+    if n_plots == 0
+        error("No plots to display")
+    end
+    
+    # Determine layout if not specified
+    if isnothing(layout)
+        # Aim for roughly square grid, slightly favoring more columns
+        ncols = ceil(Int, sqrt(n_plots * 1.2))
+        nrows = ceil(Int, n_plots / ncols)
+        layout = (nrows, ncols)
+    end
+    
+    # Combine all plots into a grid
+    combined_plot = plot(plots..., layout=layout, size=size, 
+                         plot_title="$(metric == :iv ? "Implied Volatility" : "Price") Surface - All Expiries")
+    
+    return combined_plot
+end
