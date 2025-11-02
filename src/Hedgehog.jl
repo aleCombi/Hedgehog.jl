@@ -31,6 +31,7 @@ include("payoffs/payoffs.jl")
 include("market_inputs/vol_surface.jl")
 include("market_inputs/rate_curve.jl")
 include("market_inputs/market_inputs.jl")
+include("market_inputs/futures_curve.jl")
 
 # pricing methods
 include("pricing_methods/pricing_methods.jl")
@@ -40,6 +41,10 @@ include("pricing_methods/cox_ross_rubinstein.jl")
 include("pricing_methods/montecarlo.jl")
 include("pricing_methods/carr_madan.jl")
 include("pricing_methods/least_squares_montecarlo.jl")
+
+# market data
+include("market_data/vol_quotes.jl")
+include("market_data/market_vol_surface.jl")
 
 # sensitivities
 include("greeks/greeks_problem.jl")
@@ -51,6 +56,12 @@ include("distributions/sample_from_cf.jl")
 # calibration
 include("calibration/basket.jl")
 include("calibration/calibration.jl")
+
+# data ingestion
+include("data_ingestion/deribit_vols.jl")
+
+# visualization
+include("visualization/vol_surface_plotting.jl")
 
 # Utilities
 export yearfrac, add_yearfrac
@@ -92,4 +103,11 @@ export ForwardAD, FiniteDifference, GreekProblem, SecondOrderGreekProblem, Analy
 # Calibration
 export RootFinderAlgo, OptimizerAlgo, CalibrationProblem, BasketPricingProblem
 
+# market data
+export VolQuote, UnderlyingType, SpotUnderlying, ForwardUnderlying, FutureUnderlying
+
+export FuturesBasedInfo, SpotBasedInfo, MarketVolSurface
+export volquote_from_deribit, volquotes_from_deribit, volquotes_from_deribit_parquet, marketvolsurface_from_deribit_parquet
+
+export plot_vol_slices_by_expiry, plot_vol_slices_by_strike, plot_vol_surface
 end
