@@ -20,7 +20,9 @@ end
 # tiny, inlinable methods (no curve creation here)
 @inline _spot_from_obs(und::SpotObs{T},    D::T) where {T} = und.S
 @inline _spot_from_obs(und::ForwardObs{T}, D::T) where {T} = und.F * D
-@inline _spot_from_obs(und::FuturesObs{T}, D::T) where {T} = und.G * D
+
+# We treat futures as forwards; convexity adjustment not applied.
+@inline _spot_from_obs(und::FuturesObs{T}, D::T) where {T} = und.G * D 
 
 function underlying_forward(
     und::UnderlyingObs{T},
@@ -124,6 +126,8 @@ function VolQuote(
     throw_on_missing_mid::Bool = true,
     warn_monotonicity::Bool = true,
     throw_monotonicity::Bool = false,
+    warn_iv_monotonicity::Bool = true,
+    throw_iv_monotonicity::Bool = false
 ) where {TPayoff, T<:AbstractFloat, A<:AbstractPricingModel}
 
     # Build DF once; get spot-equivalent S* and forward F from the same snapshot.
@@ -155,28 +159,27 @@ function VolQuote(
 
     # Side resolver with consistency checks
     function resolve_side(P::T, σ::T)
-        if !_isnan(P) && !_isnan(σ)
+        if !isnan(P) && !isnan(σ)
             P_chk = price_from_iv(σ)
-            σ_chk = iv_from_price(P)
-            okP = abs(P - P_chk) ≤ max(abs_tol_p,  rel_tol_p  * max(one(T), abs(P)))
-            okV = abs(σ - σ_chk) ≤ max(abs_tol_iv, rel_tol_iv * max(one(T), abs(σ)))
-            if !(okP && okV)
-                msg = "Inconsistent price/IV for side"
+            okP = abs(P - P_chk) ≤ max(abs_tol_p, rel_tol_p*max(one(T), abs(P)))
+            if !okP
                 if throw_inconsistency
-                    throw(ArgumentError("$msg: price=$P iv=$σ price_from_iv=$P_chk iv_from_price=$σ_chk"))
+                    throw(ArgumentError("Inconsistent price/IV: price=$P price_from_iv=$P_chk"))
                 elseif warn_inconsistency
-                    @warn msg price=P iv=σ price_from_iv=P_chk iv_from_price=σ_chk
+                    σ_chk = iv_from_price(P)  # compute only on mismatch
+                    @warn "Inconsistent price/IV" price=P price_from_iv=P_chk iv_from_price=σ_chk
                 end
             end
             return P, σ
-        elseif !_isnan(P)
+        elseif !isnan(P)
             return P, iv_from_price(P)
-        elseif !_isnan(σ)
+        elseif !isnan(σ)
             return price_from_iv(σ), σ
         else
             return T(NaN), T(NaN)
         end
     end
+
 
     bid_price, bid_iv = resolve_side(bid_price, bid_iv)
     mid_price, mid_iv = resolve_side(mid_price, mid_iv)
@@ -193,9 +196,9 @@ function VolQuote(
     end
     if (!_isnan(bid_iv) && !_isnan(mid_iv) && !_isnan(ask_iv)) &&
        !(bid_iv ≤ mid_iv ≤ ask_iv)
-        if throw_monotonicity
+        if throw_iv_monotonicity
             throw(ArgumentError("IV monotonicity violated: bid_iv=$bid_iv mid_iv=$mid_iv ask_iv=$ask_iv"))
-        elseif warn_monotonicity
+        elseif warn_iv_monotonicity
             @warn "IV monotonicity violated" bid_iv=bid_iv mid_iv=mid_iv ask_iv=ask_iv
         end
     end
