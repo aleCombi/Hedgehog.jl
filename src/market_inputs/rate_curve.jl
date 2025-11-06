@@ -8,32 +8,32 @@ Abstract supertype for all rate curve representations (e.g., flat, interpolated)
 abstract type AbstractRateCurve end
 
 """
-    RateCurve{F, R <: Real, I <: DataInterpolations.AbstractInterpolation} <: AbstractRateCurve
+    RateCurve{F, I <: DataInterpolations.AbstractInterpolation} <: AbstractRateCurve
 
 Represents an interpolated rate curve based on zero rates derived from input discount factors.
 
 # Fields
-- `reference_date::R`: The reference date for the curve, represented in internal tick units (e.g., milliseconds since epoch).
+- `reference_date::Int64`: The reference date for the curve, represented in internal tick units (e.g., milliseconds since epoch).
 - `interpolator::I`: An interpolation object (from `DataInterpolations.jl`) representing the zero rate curve as a function of year fractions.
 - `builder::F`: A function `(u, t) -> interpolator` used to reconstruct the interpolator (e.g., during calibration), where `u` are zero rates and `t` are year fractions.
 """
-struct RateCurve{F, R <: Real, I <: DataInterpolations.AbstractInterpolation} <: AbstractRateCurve
-    reference_date::R
+struct RateCurve{F, I <: DataInterpolations.AbstractInterpolation} <: AbstractRateCurve
+    reference_date::Int64
     interpolator::I
     builder::F
 end
 
 """
-    FlatRateCurve{R <: Number, S <: Number} <: AbstractRateCurve
+    FlatRateCurve{S <: Number} <: AbstractRateCurve
 
 Represents a flat curve with a constant continuously compounded zero rate.
 
 # Fields
-- `reference_date::R`: The reference date for the curve, in internal tick units.
+- `reference_date::Int64`: The reference date for the curve, in internal tick units.
 - `rate::S`: The constant zero rate applied across all tenors.
 """
-struct FlatRateCurve{R <: Number, S <: Number} <: AbstractRateCurve
-    reference_date::R
+struct FlatRateCurve{S <: Number} <: AbstractRateCurve
+    reference_date::Int64
     rate::S
 end
 

@@ -18,19 +18,19 @@ Market data inputs for the Black-Scholes model.
 
 This struct encapsulates the necessary inputs for pricing derivatives under the Black-Scholes model.
 """
-struct BlackScholesInputs{R <: AbstractRateCurve,TRef <: Real, TSpot <: Real, TSigma <: AbstractVolSurface} <: AbstractMarketInputs
-    referenceDate::TRef
+struct BlackScholesInputs{R <: AbstractRateCurve, TSpot <: Real, TSigma <: AbstractVolSurface} <: AbstractMarketInputs
+    referenceDate::Int64
     rate::R
     spot::TSpot
     sigma::TSigma
 end
 
-BlackScholesInputs(reference_date::TimeType, rate::AbstractRateCurve, spot, sigma::Real) =
+BlackScholesInputs(reference_date::Union{Int64,TimeType}, rate::AbstractRateCurve, spot, sigma::Real) =
     BlackScholesInputs(to_ticks(reference_date), rate, spot, FlatVolSurface(sigma; reference_date=to_ticks(reference_date)))
 
-BlackScholesInputs(reference_date::TimeType, rate::Real, spot, sigma) = BlackScholesInputs(
-    reference_date,
-    FlatRateCurve(rate; reference_date = reference_date),
+BlackScholesInputs(reference_date::Union{Int64,TimeType}, rate::Real, spot, sigma) = BlackScholesInputs(
+    to_ticks(reference_date),
+    FlatRateCurve(to_ticks(reference_date), rate),
     spot,
     sigma,
 )

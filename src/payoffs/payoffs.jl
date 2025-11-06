@@ -100,13 +100,12 @@ A vanilla option with specified exercise style, call/put type, and underlying ty
 """
 struct VanillaOption{TS,TE,E,C,U} <: AbstractPayoff where {
     TS<:Real,
-    TE<:Real,
     E<:AbstractExerciseStyle,
     C<:AbstractCallPut,
     U<:Underlying,
 }
     strike::TS
-    expiry::TE
+    expiry::Int64
     exercise_style::E
     call_put::C
     underlying::U

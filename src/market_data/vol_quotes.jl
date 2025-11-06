@@ -11,9 +11,9 @@ function underlying_spot(
     und::UnderlyingObs{T},
     r::T,
     ref_ms::Int64,
-    expiry::TimeType,
+    expiry::Union{Int64,TimeType},
 ) where {T<:Real}
-    D = df(FlatRateCurve(r; reference_date=ref_ms), expiry)  # DF = e^{-r τ}
+    D = df(FlatRateCurve(ref_ms, r), expiry)  # DF = e^{-r τ}
     return _spot_from_obs(und, D)
 end
 
@@ -27,10 +27,10 @@ end
 function underlying_forward(
     und::UnderlyingObs{T},
     r::T,
-    ref_ms::Int64,
-    expiry::TimeType,
+    ref_ms::Union{TimeType,Int64},
+    expiry::Union{Int64,TimeType},
 ) where {T<:Real}
-    D = df(FlatRateCurve(r; reference_date=ref_ms), expiry)  # DF = e^{-rτ}
+    D = df(FlatRateCurve(to_ticks(ref_ms), r), expiry)  # DF = e^{-rτ}
     return _forward_from_obs(und, D)
 end
 
@@ -50,7 +50,7 @@ Conventions:
 - Use NaN for missing bid/ask/IV to stay concrete & AD-friendly.
 - `interest_rate` is the continuous zero rate from `reference_date` to `payoff.expiry`.
 """
-struct VolQuote{TPayoff, T<:Real, A<:AbstractPricingModel}
+struct VolQuote{TPayoff, T<:Real, A<:AbstractPricingMethod}
     payoff::TPayoff
     underlying::UnderlyingObs{T}
     interest_rate::T
@@ -94,7 +94,7 @@ Policy
 Keyword arguments
 - `mid_price`, `mid_iv`, `bid_price`, `bid_iv`, `ask_price`, `ask_iv` (default NaN)
 - `reference_date::Int64` (required), `source::Symbol=:unknown`
-- `iv_model::AbstractPricingModel = BlackScholesAnalytic()`
+- `iv_model::AbstractPricingMethod = BlackScholesAnalytic()`
 - `normalized_input::Bool = false`  # inputs are price/F; builder multiplies by F
 - `iv_guess::Real = 0.5`
 - Tolerances: `abs_tol_p`, `rel_tol_p`, `abs_tol_iv`, `rel_tol_iv`
@@ -128,10 +128,10 @@ function VolQuote(
     throw_monotonicity::Bool = false,
     warn_iv_monotonicity::Bool = true,
     throw_iv_monotonicity::Bool = false
-) where {TPayoff, T<:AbstractFloat, A<:AbstractPricingModel}
+) where {TPayoff, T<:AbstractFloat, A<:AbstractPricingMethod}
 
     # Build DF once; get spot-equivalent S* and forward F from the same snapshot.
-    D = df(FlatRateCurve(interest_rate; reference_date=reference_date), payoff.expiry)
+    D = df(FlatRateCurve(reference_date, interest_rate), payoff.expiry)
     Sspot = _spot_from_obs(underlying, D)      # S* for BlackScholesAnalytic
     F     = _forward_from_obs(underlying, D)   # for (de)normalization
 
@@ -217,9 +217,9 @@ function iv_to_price(
     interest_rate::Real,
     iv::Real,
     reference_date::Union{TimeType, Real},
-    method::AbstractPricingModel,
+    method::AbstractPricingMethod,
 )
-    zero_rate_curve = FlatRateCurve(interest_rate; reference_date=reference_date)
+    zero_rate_curve = FlatRateCurve(to_ticks(reference_date), interest_rate)
     market_inputs = BlackScholesInputs(reference_date, zero_rate_curve, underlying_price, iv)
     prob = PricingProblem(payoff, market_inputs)
     return solve(prob, method).price
@@ -242,7 +242,7 @@ function price_to_iv(
     interest_rate::Real,
     price::Real,
     reference_date::Union{TimeType, Real},
-    method::AbstractPricingModel;
+    method::AbstractPricingMethod;
     iv_guess::Real = 0.5,
     normalized_input::Bool = false,
 )

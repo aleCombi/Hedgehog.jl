@@ -16,7 +16,7 @@ end
     opt = VanillaOption(100.0, exp, European(), Call(), Spot())
     vq = VolQuote(opt, und, r; mid_iv=0.4, reference_date=to_ticks(ref))
     p_abs = iv_to_price(vq, 0.4; normalize=false)
-    F = underlying_forward(und, r, to_ticks(ref), exp)
+    F = Hedgehog.underlying_forward(und, r, ref, exp)
     @test isapprox(iv_to_price(vq, 0.4; normalize=true), p_abs/F; rtol=1e-12)
 end
 
