@@ -1,4 +1,4 @@
-# ----------------------------------------
+﻿# ----------------------------------------
 # Underlying observation (what we know)
 # ----------------------------------------
 
@@ -119,8 +119,6 @@ function VolQuote(
     iv_guess::T = T(0.5),
     abs_tol_p::T = T(ABS_TOL_P),
     rel_tol_p::T = T(REL_TOL_P),
-    abs_tol_iv::T = T(ABS_TOL_IV),
-    rel_tol_iv::T = T(REL_TOL_IV),
     warn_inconsistency::Bool = true,
     throw_inconsistency::Bool = false,
     throw_on_missing_mid::Bool = true,
@@ -157,11 +155,10 @@ function VolQuote(
     iv_from_price(p::T) =
         price_to_iv(payoff, Sspot, interest_rate, p, reference_date, iv_model; iv_guess=iv_guess)
 
-    # Side resolver with consistency checks
     function resolve_side(P::T, σ::T)
         if !isnan(P) && !isnan(σ)
             P_chk = price_from_iv(σ)
-            okP = abs(P - P_chk) ≤ max(abs_tol_p, rel_tol_p*max(one(T), abs(P)))
+            okP = isapprox(P, P_chk; rtol=rel_tol_p, atol=abs_tol_p)
             if !okP
                 if throw_inconsistency
                     throw(ArgumentError("Inconsistent price/IV: price=$P price_from_iv=$P_chk"))
@@ -247,7 +244,7 @@ function price_to_iv(
     normalized_input::Bool = false,
 )
     # Curve & tenor
-    rc = FlatRateCurve(interest_rate; reference_date=reference_date)
+    rc = FlatRateCurve(to_ticks(reference_date), interest_rate)
     DF = df(rc, payoff.expiry)
 
     # Denormalize if needed: F = S*/DF

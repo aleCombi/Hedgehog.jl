@@ -79,7 +79,7 @@ using Random
         sigma = 1.0
 
         underlying = Hedgehog.Forward()
-        payoff = VanillaOption(strike, expiry, European(), Call(), underlying)
+        payoff = VanillaOption(strike, to_ticks(expiry), European(), Call(), underlying)
         market_inputs = BlackScholesInputs(reference_date, rate, spot, sigma)
         pricing_prob = PricingProblem(payoff, market_inputs)
         bs_method = BlackScholesAnalytic()
