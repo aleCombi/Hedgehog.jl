@@ -71,50 +71,176 @@ end
 
 const ABS_TOL_P  = 1e-10
 const REL_TOL_P  = 5e-7
-const ABS_TOL_IV = 1e-8
-const REL_TOL_IV = 1e-6
 
 _isnan(x) = isnan(x)
 
+# ============================================================================
+# Step 1: Input Normalization (Pure Function)
+# ============================================================================
+
 """
-    make_volquote(payoff, underlying, interest_rate; kwargs...) -> VolQuote
+    denormalize_prices(bid, mid, ask, F, normalized_input)
 
-Build a `VolQuote` enforcing the library policy:
-
-Policy
-- Mid is required: provide at least one of `mid_price` or `mid_iv`.
-- For each of (bid, mid, ask):
-  - If both (price, iv) are provided, check consistency and keep both (warn/throw on mismatch).
-  - If only price is provided, compute iv.
-  - If only iv is provided, compute price.
-  - If neither, leave both as `NaN`.
-- Prices are stored in **underlying units** (e.g., BTC). If you pass `normalized_input=true`,
-  provided prices are assumed forward-normalized (price/F) and are denormalized internally.
-
-Keyword arguments
-- `mid_price`, `mid_iv`, `bid_price`, `bid_iv`, `ask_price`, `ask_iv` (default NaN)
-- `reference_date::Int64` (required), `source::Symbol=:unknown`
-- `iv_model::AbstractPricingMethod = BlackScholesAnalytic()`
-- `normalized_input::Bool = false`  # inputs are price/F; builder multiplies by F
-- `iv_guess::Real = 0.5`
-- Tolerances: `abs_tol_p`, `rel_tol_p`, `abs_tol_iv`, `rel_tol_iv`
-- Behavior: `warn_inconsistency::Bool = true`, `throw_inconsistency::Bool = false`,
-            `throw_on_missing_mid::Bool = true`, `warn_monotonicity::Bool = true`,
-            `throw_monotonicity::Bool = false`
+Convert forward-normalized prices (price/F) to absolute prices if needed.
 """
+function denormalize_prices(
+    bid_price::T,
+    mid_price::T,
+    ask_price::T,
+    F::T,
+    normalized_input::Bool
+) where {T<:AbstractFloat}
+    if !normalized_input
+        return (bid_price, mid_price, ask_price)
+    end
+    
+    return (
+        isnan(bid_price) ? bid_price : bid_price * F,
+        isnan(mid_price) ? mid_price : mid_price * F,
+        isnan(ask_price) ? ask_price : ask_price * F
+    )
+end
+
+# ============================================================================
+# Step 2: Price/IV Resolution (Using Closures)
+# ============================================================================
+
+"""
+    resolve_price_iv_pair(price, iv, price_from_iv, iv_from_price; 
+                          abs_tol_p, rel_tol_p, warn, throw_err)
+
+Given a price and/or IV, return consistent (price, iv).
+"""
+function resolve_price_iv_pair(
+    price::T,
+    iv::T,
+    price_from_iv::Function,
+    iv_from_price::Function;
+    abs_tol_p::T = T(ABS_TOL_P),
+    rel_tol_p::T = T(REL_TOL_P),
+    warn_inconsistency::Bool = true,
+    throw_inconsistency::Bool = false
+) where {T<:AbstractFloat}
+    # Both missing
+    if isnan(price) && isnan(iv)
+        return (T(NaN), T(NaN))
+    end
+    
+    # Only price provided
+    if !isnan(price) && isnan(iv)
+        return (price, iv_from_price(price))
+    end
+    
+    # Only IV provided
+    if isnan(price) && !isnan(iv)
+        return (price_from_iv(iv), iv)
+    end
+    
+    # Both provided - check consistency
+    price_check = price_from_iv(iv)
+    is_consistent = isapprox(price, price_check; rtol=rel_tol_p, atol=abs_tol_p)
+    
+    if !is_consistent
+        if throw_inconsistency
+            throw(ArgumentError(
+                "Inconsistent price/IV: price=$price, price_from_iv=$price_check"
+            ))
+        elseif warn_inconsistency
+            iv_check = iv_from_price(price)
+            @warn "Inconsistent price/IV" price price_from_iv=price_check iv iv_from_price=iv_check
+        end
+    end
+    
+    return (price, iv)
+end
+
+# ============================================================================
+# Step 3: Validation (Pure Functions)
+# ============================================================================
+
+"""
+    validate_required_mid(mid_price, mid_iv; throw_on_missing=true)
+
+Ensure at least one of mid_price or mid_iv is provided.
+"""
+function validate_required_mid(
+    mid_price::T,
+    mid_iv::T;
+    throw_on_missing::Bool = true
+) where {T<:AbstractFloat}
+    if isnan(mid_price) && isnan(mid_iv)
+        msg = "VolQuote requires at least one of mid_price or mid_iv"
+        throw_on_missing ? throw(ArgumentError(msg)) : @warn msg
+    end
+end
+
+"""
+    validate_monotonicity(bid, mid, ask, label; warn=true, throw_err=false)
+
+Check that bid ≤ mid ≤ ask when all three are present.
+"""
+function validate_monotonicity(
+    bid::T,
+    mid::T,
+    ask::T,
+    label::String;
+    warn::Bool = true,
+    throw_err::Bool = false
+) where {T<:AbstractFloat}
+    # Skip if any value is missing
+    (isnan(bid) || isnan(mid) || isnan(ask)) && return
+    
+    if !(bid ≤ mid ≤ ask)
+        msg = "$label monotonicity violated: bid=$bid mid=$mid ask=$ask"
+        throw_err ? throw(ArgumentError(msg)) : (warn && @warn msg)
+    end
+end
+
+"""
+    validate_inputs(payoff, underlying, interest_rate, reference_date)
+
+Check that input parameters are reasonable.
+"""
+function validate_inputs(
+    payoff,
+    underlying::UnderlyingObs{T},
+    interest_rate::T,
+    reference_date::Int64
+) where {T<:Real}
+    # Expiry after reference
+    if payoff.expiry <= reference_date
+        throw(ArgumentError(
+            "Expiry ($(payoff.expiry)) must be after reference_date ($reference_date)"
+        ))
+    end
+    
+    # Positive underlying price
+    S = underlying isa SpotObs ? underlying.S :
+        underlying isa ForwardObs ? underlying.F : underlying.G
+    
+    S <= 0 && throw(ArgumentError("Underlying price must be positive, got $S"))
+    
+    # Reasonable rate (warn only)
+    abs(interest_rate) > 1.0 && @warn "Interest rate seems unrealistic" rate=interest_rate
+end
+
+# ============================================================================
+# Step 4: Main Constructor (Clean and Readable)
+# ============================================================================
+
 function VolQuote(
     payoff::TPayoff,
     underlying::UnderlyingObs{T},
     interest_rate::T;
-    # sides
+    # Prices and IVs
     mid_price::T = T(NaN), mid_iv::T = T(NaN),
     bid_price::T = T(NaN), bid_iv::T = T(NaN),
     ask_price::T = T(NaN), ask_iv::T = T(NaN),
-    # meta
+    # Metadata
     reference_date::Int64,
     source::Symbol = :unknown,
     iv_model::A = BlackScholesAnalytic(),
-    # options
+    # Options
     normalized_input::Bool = false,
     iv_guess::T = T(0.5),
     abs_tol_p::T = T(ABS_TOL_P),
@@ -127,79 +253,46 @@ function VolQuote(
     warn_iv_monotonicity::Bool = true,
     throw_iv_monotonicity::Bool = false
 ) where {TPayoff, T<:AbstractFloat, A<:AbstractPricingMethod}
-
-    # Build DF once; get spot-equivalent S* and forward F from the same snapshot.
+    
+    # Validate inputs
+    validate_inputs(payoff, underlying, interest_rate, reference_date)
+    validate_required_mid(mid_price, mid_iv; throw_on_missing=throw_on_missing_mid)
+    
+    # Compute helpers
     D = df(FlatRateCurve(reference_date, interest_rate), payoff.expiry)
-    Sspot = _spot_from_obs(underlying, D)      # S* for BlackScholesAnalytic
-    F     = _forward_from_obs(underlying, D)   # for (de)normalization
-
-    # If inputs are forward-normalized, denormalize to absolute (underlying units).
-    if normalized_input
-        if ! _isnan(bid_price); bid_price *= F; end
-        if ! _isnan(mid_price); mid_price *= F; end
-        if ! _isnan(ask_price); ask_price *= F; end
-    end
-
-    # Require mid provided in at least one form
-    if _isnan(mid_price) && _isnan(mid_iv)
-        if throw_on_missing_mid
-            throw(ArgumentError("VolQuote requires at least one of mid_price or mid_iv"))
-        else
-            @warn "VolQuote built without mid (both price and iv missing)"
-        end
-    end
-
-    # Local helpers (absolute prices, underlying units)
-    price_from_iv(iv::T) =
-        iv_to_price(payoff, Sspot, interest_rate, iv, reference_date, iv_model)
-    iv_from_price(p::T) =
-        price_to_iv(payoff, Sspot, interest_rate, p, reference_date, iv_model; iv_guess=iv_guess)
-
-    function resolve_side(P::T, σ::T)
-        if !isnan(P) && !isnan(σ)
-            P_chk = price_from_iv(σ)
-            okP = isapprox(P, P_chk; rtol=rel_tol_p, atol=abs_tol_p)
-            if !okP
-                if throw_inconsistency
-                    throw(ArgumentError("Inconsistent price/IV: price=$P price_from_iv=$P_chk"))
-                elseif warn_inconsistency
-                    σ_chk = iv_from_price(P)  # compute only on mismatch
-                    @warn "Inconsistent price/IV" price=P price_from_iv=P_chk iv_from_price=σ_chk
-                end
-            end
-            return P, σ
-        elseif !isnan(P)
-            return P, iv_from_price(P)
-        elseif !isnan(σ)
-            return price_from_iv(σ), σ
-        else
-            return T(NaN), T(NaN)
-        end
-    end
-
-
-    bid_price, bid_iv = resolve_side(bid_price, bid_iv)
-    mid_price, mid_iv = resolve_side(mid_price, mid_iv)
-    ask_price, ask_iv = resolve_side(ask_price, ask_iv)
-
-    # Monotonicity checks (only when all sides are present)
-    if (!_isnan(bid_price) && !_isnan(mid_price) && !_isnan(ask_price)) &&
-       !(bid_price ≤ mid_price ≤ ask_price)
-        if throw_monotonicity
-            throw(ArgumentError("Price monotonicity violated: bid=$bid_price mid=$mid_price ask=$ask_price"))
-        elseif warn_monotonicity
-            @warn "Price monotonicity violated" bid=bid_price mid=mid_price ask=ask_price
-        end
-    end
-    if (!_isnan(bid_iv) && !_isnan(mid_iv) && !_isnan(ask_iv)) &&
-       !(bid_iv ≤ mid_iv ≤ ask_iv)
-        if throw_iv_monotonicity
-            throw(ArgumentError("IV monotonicity violated: bid_iv=$bid_iv mid_iv=$mid_iv ask_iv=$ask_iv"))
-        elseif warn_iv_monotonicity
-            @warn "IV monotonicity violated" bid_iv=bid_iv mid_iv=mid_iv ask_iv=ask_iv
-        end
-    end
-
+    Sspot = _spot_from_obs(underlying, D)
+    F = _forward_from_obs(underlying, D)
+    
+    # Denormalize prices
+    (bid_price, mid_price, ask_price) = denormalize_prices(
+        bid_price, mid_price, ask_price, F, normalized_input
+    )
+    
+    # Create converter functions (closures capture Sspot, interest_rate, etc.)
+    price_from_iv(iv) = iv_to_price(payoff, Sspot, interest_rate, iv, reference_date, iv_model)
+    iv_from_price(p) = price_to_iv(payoff, Sspot, interest_rate, p, reference_date, iv_model; iv_guess)
+    
+    # Resolve all three sides
+    (bid_price, bid_iv) = resolve_price_iv_pair(
+        bid_price, bid_iv, price_from_iv, iv_from_price;
+        abs_tol_p, rel_tol_p, warn_inconsistency, throw_inconsistency
+    )
+    (mid_price, mid_iv) = resolve_price_iv_pair(
+        mid_price, mid_iv, price_from_iv, iv_from_price;
+        abs_tol_p, rel_tol_p, warn_inconsistency, throw_inconsistency
+    )
+    (ask_price, ask_iv) = resolve_price_iv_pair(
+        ask_price, ask_iv, price_from_iv, iv_from_price;
+        abs_tol_p, rel_tol_p, warn_inconsistency, throw_inconsistency
+    )
+    
+    # Validate monotonicity
+    validate_monotonicity(bid_price, mid_price, ask_price, "Price"; 
+                         warn=warn_monotonicity, throw_err=throw_monotonicity)
+    validate_monotonicity(bid_iv, mid_iv, ask_iv, "IV";
+                         warn=warn_iv_monotonicity, throw_err=throw_iv_monotonicity)
+    
+    # Construct
     return VolQuote(
         payoff, underlying, interest_rate,
         mid_price, bid_price, ask_price,
