@@ -100,7 +100,7 @@ A vanilla option with specified exercise style, call/put type, and underlying ty
 """
 struct VanillaOption{TS,TE,E,C,U} <: AbstractPayoff where {
     TS<:Real,
-    TE<:Real,
+    TE<:Integer,
     E<:AbstractExerciseStyle,
     C<:AbstractCallPut,
     U<:Underlying,
@@ -130,13 +130,13 @@ which is converted internally to tick units via `to_ticks`.
 """
 function VanillaOption(
     strike::TS,
-    expiry_date::TimeType,
+    expiry_date::Union{Int64,TimeType},
     exercise_style::E,
     call_put::C,
     underlying::U,
 ) where {E<:AbstractExerciseStyle,C<:AbstractCallPut,U<:Underlying,TS<:Real}
     expiry_ticks = to_ticks(expiry_date)
-    return VanillaOption{TS,TS,E,C,U}(strike, expiry_ticks, exercise_style, call_put, underlying)
+    return VanillaOption{TS,Int64,E,C,U}(strike, expiry_ticks, exercise_style, call_put, underlying)
 end
 
 """

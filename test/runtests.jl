@@ -8,6 +8,7 @@ include("unit/black_scholes.jl")
 include("unit/calibration.jl")
 include("unit/binomial_tree.jl")
 include("unit/vol_surface.jl")
+include("unit/vol_quotes.jl")
 
 include("agreement/price_agreement.jl")
 include("agreement/greeks_agreement.jl")
