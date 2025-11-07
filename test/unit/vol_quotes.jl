@@ -174,7 +174,7 @@ end
     # Verify we can construct with different models (even if we don't test convergence)
     # This just ensures the config system works with other pricing methods
     config_cm = VolQuoteConfig(
-        iv_model = CarrMadan(1.0, 32.0, LognormalDynamics())
+        CarrMadan(1.0, 32.0, LognormalDynamics())
     )
     
     # This should construct without error
