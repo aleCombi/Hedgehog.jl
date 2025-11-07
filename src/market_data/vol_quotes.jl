@@ -18,11 +18,11 @@ function underlying_spot(
 end
 
 # tiny, inlinable methods (no curve creation here)
-@inline _spot_from_obs(und::SpotObs{T},    D::T) where {T} = und.S
-@inline _spot_from_obs(und::ForwardObs{T}, D::T) where {T} = und.F * D
+@inline _spot_from_obs(und::SpotObs{T},    D::Real) where {T} = und.S
+@inline _spot_from_obs(und::ForwardObs{T}, D::Real) where {T} = und.F * D
 
 # We treat futures as forwards; convexity adjustment not applied.
-@inline _spot_from_obs(und::FuturesObs{T}, D::T) where {T} = und.G * D 
+@inline _spot_from_obs(und::FuturesObs{T}, D::Real) where {T} = und.G * D 
 
 function underlying_forward(
     und::UnderlyingObs{T},
@@ -30,13 +30,13 @@ function underlying_forward(
     ref_ms::Union{TimeType,Int64},
     expiry::Union{Int64,TimeType},
 ) where {T<:Real}
-    D = df(FlatRateCurve(to_ticks(ref_ms), r), expiry)  # DF = e^{-rτ}
+    D = df(FlatRateCurve(to_ticks(ref_ms), r), to_ticks(expiry))  # DF = e^{-rτ}
     return _forward_from_obs(und, D)
 end
 
-@inline _forward_from_obs(und::SpotObs{T},    D::T) where {T} = und.S / D   # F = S / DF
-@inline _forward_from_obs(und::ForwardObs{T}, D::T) where {T} = und.F
-@inline _forward_from_obs(und::FuturesObs{T}, D::T) where {T} = und.G
+@inline _forward_from_obs(und::SpotObs{T},    D::Real) where {T} = und.S / D   # F = S / DF
+@inline _forward_from_obs(und::ForwardObs{T}, D::Real) where {T} = und.F
+@inline _forward_from_obs(und::FuturesObs{T}, D::Real) where {T} = und.G
 
 # ----------------------------------------
 # Vol quote (prices are truth; IVs are cached views)
@@ -71,8 +71,6 @@ end
 
 const ABS_TOL_P  = 1e-10
 const REL_TOL_P  = 5e-7
-
-_isnan(x) = isnan(x)
 
 # ============================================================================
 # Step 1: Input Normalization (Pure Function)
@@ -118,8 +116,7 @@ function resolve_price_iv_pair(
     iv_from_price::Function;
     abs_tol_p::T = T(ABS_TOL_P),
     rel_tol_p::T = T(REL_TOL_P),
-    warn_inconsistency::Bool = true,
-    throw_inconsistency::Bool = false
+    vol_price_inconsistency_handling::Symbol = :warn # :warn, :throw, :ignore
 ) where {T<:AbstractFloat}
     # Both missing
     if isnan(price) && isnan(iv)
@@ -141,13 +138,17 @@ function resolve_price_iv_pair(
     is_consistent = isapprox(price, price_check; rtol=rel_tol_p, atol=abs_tol_p)
     
     if !is_consistent
-        if throw_inconsistency
+        if vol_price_inconsistency_handling == :throw
             throw(ArgumentError(
                 "Inconsistent price/IV: price=$price, price_from_iv=$price_check"
             ))
-        elseif warn_inconsistency
+        elseif vol_price_inconsistency_handling == :warn
             iv_check = iv_from_price(price)
             @warn "Inconsistent price/IV" price price_from_iv=price_check iv iv_from_price=iv_check
+        elseif vol_price_inconsistency_handling == :ignore
+        # do nothing
+        else 
+            throw(ArgumentError("Invalid vol_price_inconsistency_handling: $vol_price_inconsistency_handling"))
         end
     end
     
@@ -166,11 +167,18 @@ Ensure at least one of mid_price or mid_iv is provided.
 function validate_required_mid(
     mid_price::T,
     mid_iv::T;
-    throw_on_missing::Bool = true
+    missing_mid_handling::Symbol = :throw # :throw, :warn
 ) where {T<:AbstractFloat}
     if isnan(mid_price) && isnan(mid_iv)
         msg = "VolQuote requires at least one of mid_price or mid_iv"
-        throw_on_missing ? throw(ArgumentError(msg)) : @warn msg
+        if missing_mid_handling == :throw
+            throw(ArgumentError(msg))
+        elseif missing_mid_handling == :warn
+            @warn msg
+        else 
+            throw(ArgumentError("Invalid missing_mid_handling: $missing_mid_handling"))
+    
+        end
     end
 end
 
@@ -184,15 +192,20 @@ function validate_monotonicity(
     mid::T,
     ask::T,
     label::String;
-    warn::Bool = true,
-    throw_err::Bool = false
+    monotonicity_handling::Symbol = :warn # :warn, :throw
 ) where {T<:AbstractFloat}
     # Skip if any value is missing
     (isnan(bid) || isnan(mid) || isnan(ask)) && return
     
     if !(bid ≤ mid ≤ ask)
         msg = "$label monotonicity violated: bid=$bid mid=$mid ask=$ask"
-        throw_err ? throw(ArgumentError(msg)) : (warn && @warn msg)
+        if monotonicity_handling == :throw 
+            throw(ArgumentError(msg))
+        elseif monotonicity_handling == :warn
+            @warn msg
+        else 
+            throw(ArgumentError("Invalid validation_outcome: $monotonicity_handling"))
+        end
     end
 end
 
@@ -227,7 +240,6 @@ end
 # ============================================================================
 # Step 4: Main Constructor (Clean and Readable)
 # ============================================================================
-
 function VolQuote(
     payoff::TPayoff,
     underlying::UnderlyingObs{T},
@@ -245,18 +257,15 @@ function VolQuote(
     iv_guess::T = T(0.5),
     abs_tol_p::T = T(ABS_TOL_P),
     rel_tol_p::T = T(REL_TOL_P),
-    warn_inconsistency::Bool = true,
-    throw_inconsistency::Bool = false,
-    throw_on_missing_mid::Bool = true,
-    warn_monotonicity::Bool = true,
-    throw_monotonicity::Bool = false,
-    warn_iv_monotonicity::Bool = true,
-    throw_iv_monotonicity::Bool = false
+    vol_price_inconsistency_handling::Symbol = :warn, # :warn, :throw, :ignore
+    missing_mid_handling::Symbol = :throw, # :throw, :warn
+    price_monotonicity_handling::Symbol = :warn,   # :warn, :throw
+    iv_monotonicity_handling::Symbol = :warn   # :warn, :throw
 ) where {TPayoff, T<:AbstractFloat, A<:AbstractPricingMethod}
     
     # Validate inputs
     validate_inputs(payoff, underlying, interest_rate, reference_date)
-    validate_required_mid(mid_price, mid_iv; throw_on_missing=throw_on_missing_mid)
+    validate_required_mid(mid_price, mid_iv; missing_mid_handling=missing_mid_handling)
     
     # Compute helpers
     D = df(FlatRateCurve(reference_date, interest_rate), payoff.expiry)
@@ -275,22 +284,22 @@ function VolQuote(
     # Resolve all three sides
     (bid_price, bid_iv) = resolve_price_iv_pair(
         bid_price, bid_iv, price_from_iv, iv_from_price;
-        abs_tol_p, rel_tol_p, warn_inconsistency, throw_inconsistency
+        abs_tol_p, rel_tol_p, vol_price_inconsistency_handling
     )
     (mid_price, mid_iv) = resolve_price_iv_pair(
         mid_price, mid_iv, price_from_iv, iv_from_price;
-        abs_tol_p, rel_tol_p, warn_inconsistency, throw_inconsistency
+        abs_tol_p, rel_tol_p, vol_price_inconsistency_handling
     )
     (ask_price, ask_iv) = resolve_price_iv_pair(
         ask_price, ask_iv, price_from_iv, iv_from_price;
-        abs_tol_p, rel_tol_p, warn_inconsistency, throw_inconsistency
+        abs_tol_p, rel_tol_p, vol_price_inconsistency_handling
     )
     
     # Validate monotonicity
     validate_monotonicity(bid_price, mid_price, ask_price, "Price"; 
-                         warn=warn_monotonicity, throw_err=throw_monotonicity)
+                         monotonicity_handling=price_monotonicity_handling)
     validate_monotonicity(bid_iv, mid_iv, ask_iv, "IV";
-                         warn=warn_iv_monotonicity, throw_err=throw_iv_monotonicity)
+                         monotonicity_handling=iv_monotonicity_handling)
     
     # Construct
     return VolQuote(
