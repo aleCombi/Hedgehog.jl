@@ -95,5 +95,5 @@ export ForwardAD, FiniteDifference, GreekProblem, SecondOrderGreekProblem, Analy
 # Calibration
 export RootFinderAlgo, OptimizerAlgo, CalibrationProblem, BasketPricingProblem
 
-export iv_to_price, price_to_iv, VolQuote, SpotObs
+export iv_to_price, price_to_iv, VolQuote, SpotObs, VolQuoteConfig
 end
