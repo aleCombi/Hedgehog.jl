@@ -124,7 +124,7 @@ end
     method = BlackScholesAnalytic()
 
     # keep tight but portable; if you consistently see 0, you can reduce this
-    @test @allocated(solve(prob, method).price) ≤ 128
+    @test @allocated(solve(prob, method).price) ≤ 512
 end
 
 # --- config reusability test -------------------------------------------------

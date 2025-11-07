@@ -6,10 +6,10 @@ struct FuturesObs{T<:Real} <: UnderlyingObs{T}; G::T; end
 function underlying_spot(
     und::UnderlyingObs{T},
     r::T,
-    ref_ms::Int64,
+    ref_ms::Union{Int64,TimeType},
     expiry::Union{Int64,TimeType},
 ) where {T<:Real}
-    D = df(FlatRateCurve(ref_ms, r), expiry)  # DF = e^{-r τ}
+    D = df(FlatRateCurve(to_ticks(ref_ms), r), to_ticks(expiry))  # DF = e^{-r τ}
     return _spot_from_obs(und, D)
 end
 
@@ -40,7 +40,7 @@ end
 
 """
 VolQuote represents a market option quote with a snapshot interest rate
-and cached implied vols computed under `iv_model` (default: BlackScholesAnalytical()).
+and cached implied vols computed under `iv_model` (default: BlackScholesAnalytic()).
 
 Conventions:
 - Use NaN for missing bid/ask/IV to stay concrete & AD-friendly.
@@ -214,11 +214,12 @@ function validate_inputs(
     interest_rate::T,
     reference_date::Int64
 ) where {T<:Real}
+
     # Expiry after reference
     if payoff.expiry <= reference_date
-        throw(ArgumentError(
-            "Expiry ($(payoff.expiry)) must be after reference_date ($reference_date)"
-        ))
+        msg = "Expiry ($(payoff.expiry)) must be after reference_date ($reference_date) " *
+      "(expiry_dt=$(unix2datetime(payoff.expiry÷1000)), ref_dt=$(unix2datetime(reference_date÷1000)))"
+        throw(ArgumentError(msg))
     end
     
     # Positive underlying price
@@ -430,8 +431,8 @@ function VolQuote(
     # Metadata
     reference_date::Int64,
     # Configuration
-    config::VolQuoteConfig{T, A} = VolQuoteConfig()
-) where {TPayoff, T<:AbstractFloat, A<:AbstractPricingMethod}
+    config::VolQuoteConfig = VolQuoteConfig()
+) where {TPayoff, T<:AbstractFloat}
     
     # Validate inputs
     validate_inputs(payoff, underlying, interest_rate, reference_date)
