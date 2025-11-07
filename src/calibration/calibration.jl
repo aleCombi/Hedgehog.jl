@@ -1,3 +1,5 @@
+using OptimizationOptimJL
+
 """
     CalibrationProblem{P, M, A, Accessor, I, Q}
 
@@ -52,7 +54,7 @@ end
 Constructs an `OptimizerAlgo` with `AutoForwardDiff()` and `LBFGS()` as defaults.
 """
 function OptimizerAlgo()
-    return OptimizerAlgo(AutoForwardDiff(), Optimization.LBFGS())
+    return OptimizerAlgo(AutoForwardDiff(), OptimizationOptimJL.LBFGS())
 end
 
 """
