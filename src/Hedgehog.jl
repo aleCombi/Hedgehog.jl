@@ -56,7 +56,7 @@ include("calibration/calibration.jl")
 include("market_data/vol_quotes.jl")
 
 # Utilities
-export yearfrac, add_yearfrac
+export yearfrac, add_yearfrac, to_ticks
 
 # Payoffs
 export VanillaOption, European, American, Spot, Forward, Call, Put, parity_transform

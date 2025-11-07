@@ -218,7 +218,7 @@ function validate_inputs(
     # Expiry after reference
     if payoff.expiry <= reference_date
         msg = "Expiry ($(payoff.expiry)) must be after reference_date ($reference_date) " *
-      "(expiry_dt=$(unix2datetime(payoff.expiry÷1000)), ref_dt=$(unix2datetime(reference_date÷1000)))"
+      "(expiry_dt=$(Dates.epochms2datetime(payoff.expiry)), ref_dt=$(Dates.epochms2datetime(reference_date)))"
         throw(ArgumentError(msg))
     end
     
