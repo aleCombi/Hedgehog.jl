@@ -1,8 +1,4 @@
-﻿# ----------------------------------------
-# Underlying observation (what we know)
-# ----------------------------------------
-
-abstract type UnderlyingObs{T<:Real} end
+﻿abstract type UnderlyingObs{T<:Real} end
 struct SpotObs{T<:Real}    <: UnderlyingObs{T}; S::T; end
 struct ForwardObs{T<:Real} <: UnderlyingObs{T}; F::T; end
 struct FuturesObs{T<:Real} <: UnderlyingObs{T}; G::T; end
@@ -434,7 +430,7 @@ function VolQuote(
     # Metadata
     reference_date::Int64,
     # Configuration
-    config::VolQuoteConfig{T, A} = VolQuoteConfig{T, typeof(BlackScholesAnalytic())}()
+    config::VolQuoteConfig{T, A} = VolQuoteConfig()
 ) where {TPayoff, T<:AbstractFloat, A<:AbstractPricingMethod}
     
     # Validate inputs
@@ -545,7 +541,7 @@ function price_to_iv(
     calib = CalibrationProblem(
         prob,
         method,
-        [VolLens(1, 1)],               # calibrate the single vol parameter
+        [@optic _.market_inputs.sigma.σ],               # calibrate the single vol parameter
         [target_price],
         [iv_guess],
     )
