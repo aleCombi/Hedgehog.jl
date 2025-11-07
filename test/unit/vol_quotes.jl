@@ -54,8 +54,7 @@ end
     und = SpotObs(100.0); r = 0.02
     opt = VanillaOption(100.0, Date(2025,7,1), European(), Call(), Spot())
     
-    config = VolQuoteConfig()
-    vq = VolQuote(opt, und, r; mid_iv=0.3, reference_date=ref, config=config)
+    vq = VolQuote(opt, und, r; mid_iv=0.3, reference_date=ref) # default config
     
     @test isnan(vq.bid_price) && isnan(vq.bid_iv)
     @test isnan(vq.ask_price) && isnan(vq.ask_iv)
