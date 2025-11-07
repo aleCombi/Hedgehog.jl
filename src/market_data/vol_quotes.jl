@@ -61,7 +61,6 @@ struct VolQuote{TPayoff, T<:Real, A<:AbstractPricingMethod}
     bid_iv::T
     ask_iv::T
     reference_date::Int64   # ms since epoch (quote observation / valuation clock for τ)
-    source::Symbol
     iv_model::A             # canonically BlackScholesAnalytic()
 end
 
@@ -176,8 +175,7 @@ function validate_required_mid(
         elseif missing_mid_handling == :warn
             @warn msg
         else 
-            throw(ArgumentError("Invalid missing_mid_handling: $missing_mid_handling"))
-    
+            throw(ArgumentError("Invalid missing_mid_handling: $missing_mid_handling"))  
         end
     end
 end
@@ -241,6 +239,10 @@ end
 # Configuration Struct
 # ============================================================================
 
+# ============================================================================
+# Configuration Struct - FIXED VERSION
+# ============================================================================
+
 """
     VolQuoteConfig{T<:AbstractFloat, A<:AbstractPricingMethod}
 
@@ -265,21 +267,19 @@ Configuration parameters for VolQuote construction and validation.
 # Examples
 ```julia
 # Use defaults (BlackScholesAnalytic)
-config = VolQuoteConfig{Float64}()
+config = VolQuoteConfig()
 
 # Customize specific parameters
-config = VolQuoteConfig{Float64}(
+config = VolQuoteConfig(
     vol_price_inconsistency_handling = :throw,
     iv_guess = 0.3
 )
 
 # Use different pricing model
-config = VolQuoteConfig{Float64}(
-    iv_model = CarrMadan(1.0, 32.0, HestonDynamics())
-)
+config = VolQuoteConfig(CarrMadan(1.0, 32.0, HestonDynamics()))
 
 # Strict validation
-strict_config = VolQuoteConfig{Float64}(
+strict_config = VolQuoteConfig(
     vol_price_inconsistency_handling = :throw,
     missing_mid_handling = :throw,
     price_monotonicity_handling = :throw,
@@ -298,16 +298,17 @@ struct VolQuoteConfig{T<:AbstractFloat, A<:AbstractPricingMethod}
     iv_monotonicity_handling::Symbol
     normalized_input::Bool
     
-    function VolQuoteConfig{T, A}(;
-        iv_model::A = BlackScholesAnalytic(),
-        iv_guess::T = T(0.5),
-        abs_tol_p::T = T(ABS_TOL_P),
-        rel_tol_p::T = T(REL_TOL_P),
-        vol_price_inconsistency_handling::Symbol = :warn,
-        missing_mid_handling::Symbol = :throw,
-        price_monotonicity_handling::Symbol = :warn,
-        iv_monotonicity_handling::Symbol = :warn,
-        normalized_input::Bool = false
+    # Inner constructor - no defaults, only validation
+    function VolQuoteConfig{T, A}(
+        iv_model::A,
+        iv_guess::T,
+        abs_tol_p::T,
+        rel_tol_p::T,
+        vol_price_inconsistency_handling::Symbol,
+        missing_mid_handling::Symbol,
+        price_monotonicity_handling::Symbol,
+        iv_monotonicity_handling::Symbol,
+        normalized_input::Bool
     ) where {T<:AbstractFloat, A<:AbstractPricingMethod}
         # Validate handling symbols
         valid_inconsistency = (:throw, :warn, :ignore)
@@ -332,13 +333,37 @@ struct VolQuoteConfig{T<:AbstractFloat, A<:AbstractPricingMethod}
     end
 end
 
-# Convenience constructor that infers types
-function VolQuoteConfig(; 
-    iv_model::A = BlackScholesAnalytic(),
-    iv_guess::T = 0.5,
-    kwargs...
-) where {T<:AbstractFloat, A<:AbstractPricingMethod}
-    return VolQuoteConfig{T, A}(; iv_model=iv_model, iv_guess=iv_guess, kwargs...)
+# Outer constructor with defaults - infers types automatically
+function VolQuoteConfig(
+    iv_model::A = BlackScholesAnalytic();
+    iv_guess::Real = 0.5,
+    abs_tol_p::Real = ABS_TOL_P,
+    rel_tol_p::Real = REL_TOL_P,
+    vol_price_inconsistency_handling::Symbol = :warn,
+    missing_mid_handling::Symbol = :throw,
+    price_monotonicity_handling::Symbol = :warn,
+    iv_monotonicity_handling::Symbol = :warn,
+    normalized_input::Bool = false
+) where {A<:AbstractPricingMethod}
+    # Promote all numeric arguments to common type
+    T = promote_type(typeof(iv_guess), typeof(abs_tol_p), typeof(rel_tol_p))
+    
+    # Ensure we have a concrete float type
+    if !(T <: AbstractFloat)
+        T = Float64
+    end
+    
+    return VolQuoteConfig{T, A}(
+        iv_model,
+        T(iv_guess),
+        T(abs_tol_p),
+        T(rel_tol_p),
+        vol_price_inconsistency_handling,
+        missing_mid_handling,
+        price_monotonicity_handling,
+        iv_monotonicity_handling,
+        normalized_input
+    )
 end
 
 # ============================================================================
@@ -351,7 +376,6 @@ end
              bid_price=NaN, bid_iv=NaN,
              ask_price=NaN, ask_iv=NaN,
              reference_date::Int64,
-             source=:unknown,
              config=VolQuoteConfig())
 
 Construct a VolQuote from market data with optional bid/mid/ask prices and IVs.
@@ -367,7 +391,6 @@ and monotonicity according to the settings in `config`.
 - `mid_price`, `bid_price`, `ask_price`: Option prices (use NaN for missing)
 - `mid_iv`, `bid_iv`, `ask_iv`: Implied volatilities (use NaN for missing)
 - `reference_date`: Quote observation time in milliseconds since epoch
-- `source`: Data source identifier (default: :unknown)
 - `config`: Configuration for pricing model, validation and solver behavior (default: VolQuoteConfig())
 
 # Examples
@@ -410,7 +433,6 @@ function VolQuote(
     ask_iv::T = T(NaN),
     # Metadata
     reference_date::Int64,
-    source::Symbol = :unknown,
     # Configuration
     config::VolQuoteConfig{T, A} = VolQuoteConfig{T, typeof(BlackScholesAnalytic())}()
 ) where {TPayoff, T<:AbstractFloat, A<:AbstractPricingMethod}
@@ -469,7 +491,7 @@ function VolQuote(
         payoff, underlying, interest_rate,
         mid_price, bid_price, ask_price,
         mid_iv, bid_iv, ask_iv,
-        reference_date, source, config.iv_model
+        reference_date, config.iv_model
     )
 end
 
