@@ -23,7 +23,7 @@ using Accessors
 
         basket = BasketPricingProblem(payoffs, market_inputs)
         calib = CalibrationProblem(basket, BlackScholesAnalytic(), accessors, quotes, 0.5*ones(length(payoffs)))
-        result = Hedgehog.solve(calib, OptimizerAlgo())
+        result = Hedgehog.solve(calib, OptimizerAlgo(), maxiters = 100, f_abstol = 1e-5)
 
         @test isapprox(result.u[1], sigma; atol = 1e-5)
     end
@@ -77,6 +77,9 @@ using Accessors
         ]
 
         basket_problem = BasketPricingProblem(payoffs, market_inputs)
+        # 1. Define Bounds (Essential for Heston)
+        lower = [1e-5, 1e-3, 1e-5, 1e-3, -0.99]
+        upper = [1.0,  20.0, 1.0,  5.0,   0.99]
 
         calib_problem = CalibrationProblem(
             basket_problem,
@@ -87,7 +90,9 @@ using Accessors
         )
 
         calib_algo = OptimizerAlgo()
-        result = Hedgehog.solve(calib_problem, calib_algo)
+        result = Hedgehog.solve(calib_problem, calib_algo, f_abstol = 1e-5, lb = lower,
+            ub = upper,
+            maxiters = 500,)
 
         # Extract calibrated parameters
         @test isapprox(result.u[1], true_params.v0, rtol=1e-1)

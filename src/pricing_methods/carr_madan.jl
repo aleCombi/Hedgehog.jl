@@ -40,7 +40,7 @@ Constructs a `CarrMadan` method with optional integration settings for `quadgk`.
 - `dynamics`: The price dynamics (must support `marginal_law`).
 - `kwargs...`: Additional keyword arguments for `quadgk`.
 """
-function CarrMadan(α, bound, dynamics, integral_method = Integrals.HCubatureJL(); kwargs...)
+function CarrMadan(α, bound, dynamics, integral_method = Integrals.QuadGKJL(); kwargs...)
     return CarrMadan(α, bound, dynamics, integral_method, (; kwargs...))
 end
 
