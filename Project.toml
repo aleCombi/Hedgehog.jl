@@ -1,7 +1,7 @@
 name = "Hedgehog"
 uuid = "7f16798b-0e18-40de-98af-932948254698"
 authors = ["Alessandro Combi <alecombi94@gmail.com> and contributors"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
