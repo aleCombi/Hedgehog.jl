@@ -54,17 +54,24 @@ end
 Constructs an `OptimizerAlgo` with `AutoForwardDiff()` and `LBFGS()` as defaults.
 """
 function OptimizerAlgo()
-    return OptimizerAlgo(AutoForwardDiff(), OptimizationOptimJL.LBFGS())
+    return OptimizerAlgo(Optimization.AutoForwardDiff(), OptimizationOptimJL.LBFGS())
 end
 
 """
-    solve(calib::CalibrationProblem, calib_algo::OptimizerAlgo; kwargs...)
+    solve(calib::CalibrationProblem, calib_algo::OptimizerAlgo; lb=nothing, ub=nothing, kwargs...)
 
 Calibrates a basket of pricing problems using an optimization algorithm.
 
+# Arguments
+- `calib`: The calibration problem definition.
+- `calib_algo`: The optimization algorithm configuration.
+- `lb`: Lower bounds for the parameters (optional, but highly recommended for models like Heston).
+- `ub`: Upper bounds for the parameters (optional).
+- `kwargs...`: Additional arguments passed to the solver (e.g., `maxiters`, `abstol`).
+
 Returns the optimization result, which contains the fitted parameters.
 """
-function solve(calib::CalibrationProblem, calib_algo::OptimizerAlgo; kwargs...)
+function solve(calib::CalibrationProblem, calib_algo::OptimizerAlgo; lb=nothing, ub=nothing, kwargs...)
     function objective(x, p)
         basket_prob = calib.pricing_problem
 
@@ -81,7 +88,11 @@ function solve(calib::CalibrationProblem, calib_algo::OptimizerAlgo; kwargs...)
     end
 
     optf = OptimizationFunction(objective, calib_algo.diff)
-    opt_prob = OptimizationProblem(optf, calib.initial_guess, nothing)
+    
+    # Explicitly pass bounds to the problem definition
+    opt_prob = OptimizationProblem(optf, calib.initial_guess, nothing; lb=lb, ub=ub)
+    
+    # Pass remaining kwargs (like maxiters) to the solver
     result = Optimization.solve(opt_prob, calib_algo.optim_algo; kwargs...)
     return result
 end
@@ -102,7 +113,7 @@ end
 Constructs a `RootFinderAlgo` using the default method (Brent’s method inside `NonlinearSolve`).
 """
 function RootFinderAlgo()
-    return RootFinderAlgo(Brent())
+    return RootFinderAlgo(OptimizationOptimJL.Brent())
 end
 
 """

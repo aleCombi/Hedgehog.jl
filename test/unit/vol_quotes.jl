@@ -7,7 +7,7 @@ using Test, Dates, Logging
     for (S, K, σ) in ((100.0, 80.0, 0.2), (100.0, 100.0, 0.5), (100.0, 130.0, 1.0))
         opt = VanillaOption(K, exp, European(), Call(), Spot())
         p   = iv_to_price(opt, S, 0.02, σ, ref, BlackScholesAnalytic())
-        σ2  = price_to_iv(opt, S, 0.02, p,  ref, BlackScholesAnalytic(); iv_guess=σ)
+        σ2  = price_to_iv(opt, S, 0.02, p, ref, BlackScholesAnalytic(); iv_guess=σ)
         @test isapprox(σ2, σ; rtol=1e-8, atol=1e-10)
     end
 end
@@ -195,7 +195,7 @@ end
     p_abs = vq_abs.mid_price
     
     # Calculate forward
-    D = df(FlatRateCurve(ref, r), exp)
+    D = Hedgehog.df(FlatRateCurve(ref, r), exp)
     F = und.S / D
     p_normalized = p_abs / F
     

@@ -1,4 +1,4 @@
-using Revise, Hedgehog, Test, Dates, Distributions
+using Hedgehog, Test, Dates, Distributions
 
 include("unit/date_functions.jl")
 include("unit/payoff.jl")
