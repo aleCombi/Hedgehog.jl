@@ -39,6 +39,7 @@ include("pricing_methods/black_scholes.jl")
 include("pricing_methods/cox_ross_rubinstein.jl")
 include("pricing_methods/montecarlo.jl")
 include("pricing_methods/carr_madan.jl")
+include("pricing_methods/cos_method.jl")
 include("pricing_methods/least_squares_montecarlo.jl")
 
 # sensitivities
@@ -78,6 +79,7 @@ export RectVolSurface, spine_strikes, spine_tenors, spine_vols, get_vol, get_vol
 export PricingProblem, solve
 export BlackScholesAnalytic, implied_vol
 export CarrMadan
+export COSMethod
 export CoxRossRubinsteinMethod
 export MonteCarlo,
     HestonBroadieKaya,

@@ -99,3 +99,19 @@ struct CRRSolution{T <: Number, P<:PricingProblem, M <: AbstractPricingMethod} <
     method::M
     price::T
 end
+
+"""
+    COSSolution{T <: Number, P<:PricingProblem, M <: AbstractPricingMethod} <: AbstractPricingSolution
+
+Represents a pricing solution obtained using the COS (Fourier-cosine expansion) method.
+
+# Fields
+- `problem::P`: The pricing problem definition (`<: PricingProblem`).
+- `method::M`: The specific COS method configuration (`<: AbstractPricingMethod`).
+- `price::T`: The calculated numerical price (`<: Number`).
+"""
+struct COSSolution{T <: Number, P<:PricingProblem, M <: AbstractPricingMethod} <: AbstractPricingSolution
+    problem::P
+    method::M
+    price::T
+end
