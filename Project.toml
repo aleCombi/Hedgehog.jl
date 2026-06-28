@@ -1,7 +1,7 @@
 name = "Hedgehog"
 uuid = "7f16798b-0e18-40de-98af-932948254698"
-authors = ["Alessandro Combi <alecombi94@gmail.com> and contributors"]
 version = "0.1.1"
+authors = ["Alessandro Combi <alecombi94@gmail.com> and contributors"]
 
 [deps]
 Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
@@ -25,7 +25,7 @@ StochasticDiffEq = "789caeaf-c7a9-5a7d-9973-96adeb23e2a0"
 
 [compat]
 Accessors = "0.1.42"
-DataInterpolations = "7.2.0, 8"
+DataInterpolations = "7.2.0, 8, 9"
 Dates = "1.10"
 DiffEqNoiseProcess = "5.24.1"
 Distributions = "0.25"
